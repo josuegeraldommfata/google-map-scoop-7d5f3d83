@@ -97,6 +97,20 @@ export function SearchForm({ onSearch, isSearching }: Props) {
             {STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+
+        <div className="space-y-2">
+          <Label className="text-secondary-foreground text-sm">Quantidade de Leads</Label>
+          <Input
+            type="number"
+            value={quantity}
+            onChange={e => setQuantity(e.target.value)}
+            placeholder="Ex: 50"
+            min={1}
+            max={500}
+            className="bg-muted border-border"
+          />
+          <p className="text-[11px] text-muted-foreground">Mínimo 1, máximo 500</p>
+        </div>
       </div>
 
       <Button

@@ -19,6 +19,7 @@ export interface SearchQuery {
   keywords: string[];
   cities: string[];
   state: string;
+  quantity: number;
 }
 
 export interface SearchHistory {
