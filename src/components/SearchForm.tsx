@@ -22,6 +22,7 @@ export function SearchForm({ onSearch, isSearching }: Props) {
   const [keywords, setKeywords] = useState("");
   const [cities, setCities] = useState("");
   const [state, setState] = useState("");
+  const [quantity, setQuantity] = useState("50");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
