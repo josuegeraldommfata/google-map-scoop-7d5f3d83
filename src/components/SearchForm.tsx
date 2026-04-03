@@ -32,6 +32,7 @@ export function SearchForm({ onSearch, isSearching }: Props) {
       keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
       cities: cities.split(",").map(c => c.trim()).filter(Boolean),
       state,
+      quantity: Math.max(1, Math.min(500, parseInt(quantity) || 50)),
     });
   };
 
