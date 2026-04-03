@@ -36,7 +36,8 @@ export function generateLeads(query: SearchQuery): Lead[] {
   const leads: Lead[] = [];
   const usedNames = new Set<string>();
 
-  const leadsPerCity = Math.floor(Math.random() * 8) + 8;
+  const totalDesired = query.quantity || 50;
+  const leadsPerCity = Math.ceil(totalDesired / query.cities.length);
 
   for (const city of query.cities) {
     for (let i = 0; i < leadsPerCity; i++) {

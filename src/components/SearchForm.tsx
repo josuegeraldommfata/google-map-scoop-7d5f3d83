@@ -22,6 +22,7 @@ export function SearchForm({ onSearch, isSearching }: Props) {
   const [keywords, setKeywords] = useState("");
   const [cities, setCities] = useState("");
   const [state, setState] = useState("");
+  const [quantity, setQuantity] = useState("50");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +32,7 @@ export function SearchForm({ onSearch, isSearching }: Props) {
       keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
       cities: cities.split(",").map(c => c.trim()).filter(Boolean),
       state,
+      quantity: Math.max(1, Math.min(500, parseInt(quantity) || 50)),
     });
   };
 
@@ -94,6 +96,20 @@ export function SearchForm({ onSearch, isSearching }: Props) {
             <option value="">Selecione...</option>
             {STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-secondary-foreground text-sm">Quantidade de Leads</Label>
+          <Input
+            type="number"
+            value={quantity}
+            onChange={e => setQuantity(e.target.value)}
+            placeholder="Ex: 50"
+            min={1}
+            max={500}
+            className="bg-muted border-border"
+          />
+          <p className="text-[11px] text-muted-foreground">Mínimo 1, máximo 500</p>
         </div>
       </div>
 
