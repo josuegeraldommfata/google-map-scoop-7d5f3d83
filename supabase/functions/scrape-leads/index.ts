@@ -1,5 +1,5 @@
-// Edge function: scrape Google Maps results in real-time
-// Returns leads without persisting them
+// Edge function: Google Maps web scraping (no API keys, pure HTTP)
+// Uses Google Maps internal search endpoint that returns structured data
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,129 +15,187 @@ interface ScrapeRequest {
   quantity: number;
 }
 
-interface ScrapedLead {
-  id: string;
-  name: string;
-  address: string;
-  phone: string;
-  whatsapp: string | null;
-  website: string | null;
-  instagram: string | null;
-  rating: number;
-  reviewCount: number;
-  type: 'hot' | 'cold';
-  niche: string;
-  city: string;
-  state: string;
-  foundAt: string;
+const UAS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+];
+const ua = () => UAS[Math.floor(Math.random() * UAS.length)];
+
+// Strip Google's protective `)]}'` prefix and parse JSON
+function parseGooglePayload(text: string): any {
+  const cleaned = text.replace(/^\)\]\}'\s*/, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Try extracting first JSON array
+    const m = cleaned.match(/\[.*\]/s);
+    if (m) {
+      try { return JSON.parse(m[0]); } catch { /* fall through */ }
+    }
+    return null;
+  }
 }
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-
-// Extract phone digits and format as WhatsApp link
-function normalizePhone(raw: string): { phone: string; whatsapp: string | null } {
-  const digits = raw.replace(/\D/g, '');
-  if (!digits || digits.length < 10) return { phone: raw, whatsapp: null };
-  // Brazilian numbers: prepend 55 if missing
-  const wa = digits.length <= 11 ? `55${digits}` : digits;
-  return { phone: raw, whatsapp: wa };
+// Recursively find all entries that look like place objects
+function findPlaces(node: any, out: any[] = []): any[] {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    // Heuristic: a place entry tends to be an array containing a name string at index 11
+    // and a coordinate sub-array. Easier to do brute walk.
+    for (const item of node) findPlaces(item, out);
+    // Also try treating this array as a place
+    if (node.length > 14 && typeof node[11] === 'string' && node[11].length > 1 && node[11].length < 120) {
+      out.push(node);
+    }
+  } else {
+    for (const k of Object.keys(node)) findPlaces(node[k], out);
+  }
+  return out;
 }
 
-// Scrape Google Maps search results page
-async function scrapeGoogleMaps(query: string, city: string, state: string, limit: number): Promise<Partial<ScrapedLead>[]> {
-  const searchTerm = `${query} em ${city} ${state}`;
-  const url = `https://www.google.com/maps/search/${encodeURIComponent(searchTerm)}/?hl=pt-BR`;
+function safeString(v: any): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
 
-  console.log(`[scrape] ${searchTerm} -> ${url}`);
+function deepFindFirst(node: any, predicate: (v: any) => boolean): any {
+  if (predicate(node)) return node;
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const it of node) {
+      const r = deepFindFirst(it, predicate);
+      if (r != null) return r;
+    }
+  } else {
+    for (const k of Object.keys(node)) {
+      const r = deepFindFirst(node[k], predicate);
+      if (r != null) return r;
+    }
+  }
+  return null;
+}
+
+function deepFindAll(node: any, predicate: (v: any) => boolean, out: any[] = []): any[] {
+  if (predicate(node)) out.push(node);
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    for (const it of node) deepFindAll(it, predicate, out);
+  } else {
+    for (const k of Object.keys(node)) deepFindAll(node[k], predicate, out);
+  }
+  return out;
+}
+
+function extractFromPlace(place: any) {
+  const name = safeString(place[11]) || safeString(place[2]) || null;
+  if (!name) return null;
+
+  // Address often at place[18] or contained within array
+  const address = safeString(place[18]) || safeString(deepFindFirst(place, v => typeof v === 'string' && /\d.*[-,].*[A-Z]{2}/.test(v))) || null;
+
+  // Phone: find string matching Brazilian format
+  const phoneStr = deepFindFirst(place, v =>
+    typeof v === 'string' && /^\+?55?\s?\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/.test(v.replace(/\s/g, ' '))
+  ) || deepFindFirst(place, v =>
+    typeof v === 'string' && /\(\d{2}\)\s?\d{4,5}-\d{4}/.test(v)
+  );
+
+  // Website: any http url that's not google's
+  const websiteCandidates = deepFindAll(place, v =>
+    typeof v === 'string' &&
+    /^https?:\/\//i.test(v) &&
+    !/(google\.|gstatic|googleusercontent|ggpht|schema\.org|maps\.app)/i.test(v)
+  );
+  const website = websiteCandidates[0] || null;
+
+  // Instagram
+  const igCandidate = websiteCandidates.find((w: string) => /instagram\.com/i.test(w));
+  let instagram: string | null = null;
+  if (igCandidate) {
+    const m = String(igCandidate).match(/instagram\.com\/([A-Za-z0-9._]+)/i);
+    if (m) instagram = `@${m[1]}`;
+  }
+
+  // Rating: look for [rating, count] sub-array where rating is float 1-5
+  const ratingNode = deepFindFirst(place, v =>
+    Array.isArray(v) && v.length >= 2 &&
+    typeof v[0] === 'number' && v[0] >= 1 && v[0] <= 5 &&
+    typeof v[1] === 'number' && v[1] > 0 && v[1] < 1000000
+  );
+  const rating = ratingNode ? ratingNode[0] : 0;
+  const reviewCount = ratingNode ? ratingNode[1] : 0;
+
+  return {
+    name,
+    address,
+    phone: phoneStr ? String(phoneStr) : null,
+    website,
+    instagram,
+    rating,
+    reviewCount,
+  };
+}
+
+async function scrapeMaps(query: string, city: string, state: string, limit: number) {
+  // Google Maps internal search endpoint — returns JS payload with structured data
+  const term = `${query} ${city} ${state}`;
+  const url = `https://www.google.com/search?tbm=map&q=${encodeURIComponent(term)}&hl=pt-BR&gl=br`;
+
+  console.log(`[scrape] GET ${term}`);
 
   const res = await fetch(url, {
     headers: {
-      'User-Agent': UA,
-      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      'User-Agent': ua(),
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+      'Referer': 'https://www.google.com/maps',
     },
   });
 
   if (!res.ok) {
-    console.error(`[scrape] HTTP ${res.status} for ${searchTerm}`);
+    console.error(`[scrape] HTTP ${res.status} for "${term}"`);
     return [];
   }
 
-  const html = await res.text();
+  const text = await res.text();
+  const data = parseGooglePayload(text);
 
-  // Google Maps embeds results inside an APP_INITIALIZATION_STATE blob.
-  // Extract place arrays via regex on the embedded JSON.
-  const leads: Partial<ScrapedLead>[] = [];
+  if (!data) {
+    console.warn(`[scrape] could not parse payload for "${term}" (len=${text.length})`);
+    // Fallback: try regex extraction on raw HTML/text
+    return regexFallback(text, query, city, state, limit);
+  }
+
+  const places = findPlaces(data);
+  console.log(`[scrape] found ${places.length} place candidates for "${term}"`);
+
+  const results: any[] = [];
   const seen = new Set<string>();
 
-  // Match place entries: name, address, phone, rating, reviews, website
-  // Pattern looks for sequences containing place names with their coordinates
-  const placePattern = /\\"([^\\"]{3,80})\\",null,\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/g;
-  const phonePattern = /"(\+?55[\s\-]?\(?\d{2}\)?[\s\-]?\d{4,5}[\s\-]?\d{4})"/g;
-  const websitePattern = /"(https?:\/\/(?!(?:www\.)?google\.|maps\.google|gstatic|googleusercontent|schema\.org)[^"\s]+\.[a-z]{2,}[^"\s]*)"/g;
-  const ratingPattern = /\[(\d\.\d),(\d+)\]/g;
+  for (const p of places) {
+    if (results.length >= limit) break;
+    const ext = extractFromPlace(p);
+    if (!ext || !ext.name) continue;
+    const key = ext.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-  // Extract all candidate names
-  const names: string[] = [];
-  let m;
-  while ((m = placePattern.exec(html)) !== null && names.length < limit * 3) {
-    const name = m[1].replace(/\\u[\dA-F]{4}/gi, (s) =>
-      String.fromCharCode(parseInt(s.replace(/\\u/g, ''), 16))
-    );
-    if (!seen.has(name) && !/^https?:|^\/|^image|^icon/i.test(name)) {
-      seen.add(name);
-      names.push(name);
-    }
-  }
+    const phoneDigits = ext.phone ? ext.phone.replace(/\D/g, '') : '';
+    const whatsapp = phoneDigits.length >= 10
+      ? (phoneDigits.length <= 11 ? `55${phoneDigits}` : phoneDigits)
+      : null;
 
-  // Extract phones and websites in order of appearance
-  const phones: string[] = [];
-  while ((m = phonePattern.exec(html)) !== null) phones.push(m[1]);
-
-  const websites: string[] = [];
-  const seenSites = new Set<string>();
-  while ((m = websitePattern.exec(html)) !== null) {
-    if (!seenSites.has(m[1])) {
-      seenSites.add(m[1]);
-      websites.push(m[1]);
-    }
-  }
-
-  const ratings: Array<{ rating: number; count: number }> = [];
-  while ((m = ratingPattern.exec(html)) !== null) {
-    const r = parseFloat(m[1]);
-    const c = parseInt(m[2]);
-    if (r >= 1 && r <= 5 && c > 0 && c < 100000) ratings.push({ rating: r, count: c });
-  }
-
-  console.log(`[scrape] ${searchTerm}: names=${names.length} phones=${phones.length} websites=${websites.length} ratings=${ratings.length}`);
-
-  // Combine into leads
-  const max = Math.min(names.length, limit);
-  for (let i = 0; i < max; i++) {
-    const phoneRaw = phones[i] || '';
-    const { phone, whatsapp } = normalizePhone(phoneRaw);
-    const website = websites[i] || null;
-    const rating = ratings[i]?.rating || 0;
-    const reviewCount = ratings[i]?.count || 0;
-
-    // Try to detect Instagram from website URL
-    let instagram: string | null = null;
-    if (website && /instagram\.com/i.test(website)) {
-      const ig = website.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
-      instagram = ig ? `@${ig[1]}` : null;
-    }
-
-    leads.push({
-      id: `${city}-${i}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: names[i],
-      address: `${city}, ${state}`,
-      phone: phone || 'N/A',
+    results.push({
+      id: `${city}-${results.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: ext.name,
+      address: ext.address || `${city}, ${state}`,
+      phone: ext.phone || 'N/A',
       whatsapp,
-      website,
-      instagram,
-      rating,
-      reviewCount,
-      type: !website ? 'hot' : 'cold',
+      website: ext.website,
+      instagram: ext.instagram,
+      rating: ext.rating || 0,
+      reviewCount: ext.reviewCount || 0,
+      type: !ext.website ? 'hot' : 'cold',
       niche: query,
       city,
       state,
@@ -145,63 +203,105 @@ async function scrapeGoogleMaps(query: string, city: string, state: string, limi
     });
   }
 
-  return leads;
+  return results;
+}
+
+// Fallback: brute regex extraction when JSON parse fails
+function regexFallback(text: string, query: string, city: string, state: string, limit: number) {
+  const results: any[] = [];
+  const seen = new Set<string>();
+
+  // Match place entries with name + lat/lng nearby
+  const namePattern = /"([^"\\]{4,80})",null,\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/g;
+  let m;
+  while ((m = namePattern.exec(text)) !== null && results.length < limit) {
+    const name = m[1];
+    if (seen.has(name) || /^https?:|\.(com|jpg|png|svg)$|^image|maps\.app/i.test(name)) continue;
+    seen.add(name);
+
+    // Search ~2000 chars around match for phone & website
+    const start = Math.max(0, m.index - 500);
+    const end = Math.min(text.length, m.index + 2000);
+    const slice = text.slice(start, end);
+
+    const phoneM = slice.match(/(\(\d{2}\)\s?\d{4,5}-?\d{4}|\+?55\s?\d{2}\s?\d{4,5}-?\d{4})/);
+    const webM = slice.match(/"(https?:\/\/(?!(?:www\.)?(?:google\.|gstatic|googleusercontent|ggpht|schema\.org|maps\.app))[^"\s]+)"/);
+    const igM = slice.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
+    const ratingM = slice.match(/\[(\d\.\d),(\d{1,5})\]/);
+
+    const phone = phoneM ? phoneM[1] : 'N/A';
+    const phoneDigits = phone.replace(/\D/g, '');
+    const whatsapp = phoneDigits.length >= 10
+      ? (phoneDigits.length <= 11 ? `55${phoneDigits}` : phoneDigits)
+      : null;
+
+    results.push({
+      id: `${city}-${results.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      address: `${city}, ${state}`,
+      phone,
+      whatsapp,
+      website: webM ? webM[1] : null,
+      instagram: igM ? `@${igM[1]}` : null,
+      rating: ratingM ? parseFloat(ratingM[1]) : 0,
+      reviewCount: ratingM ? parseInt(ratingM[2]) : 0,
+      type: !webM ? 'hot' : 'cold',
+      niche: query,
+      city,
+      state,
+      foundAt: new Date().toISOString(),
+    });
+  }
+
+  console.log(`[regexFallback] extracted ${results.length} from text(len=${text.length})`);
+  return results;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
     const body: ScrapeRequest = await req.json();
     const { niche, keywords = [], cities, state, quantity } = body;
 
     if (!niche || !cities?.length || !state || !quantity) {
-      return new Response(
-        JSON.stringify({ error: 'Campos obrigatórios: niche, cities, state, quantity' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Campos obrigatórios: niche, cities, state, quantity' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const perCity = Math.ceil(quantity / cities.length);
-    const queries = [niche, ...keywords].filter(Boolean);
+    const queries = [niche, ...keywords.slice(0, 1)].filter(Boolean);
 
-    const allLeads: Partial<ScrapedLead>[] = [];
-
-    // Scrape each city in parallel (limit concurrency)
+    const all: any[] = [];
     const tasks: Promise<void>[] = [];
     for (const city of cities) {
-      for (const q of queries.slice(0, 2)) {
+      for (const q of queries) {
         tasks.push(
-          scrapeGoogleMaps(q, city, state, perCity).then((found) => {
-            allLeads.push(...found);
-          }).catch((e) => console.error(`[task] ${q}/${city} failed:`, e.message))
+          scrapeMaps(q, city, state, perCity)
+            .then((found) => { all.push(...found); })
+            .catch((e) => console.error(`[task] ${q}/${city}:`, e.message))
         );
       }
     }
     await Promise.all(tasks);
 
-    // Dedupe by name+city, then trim to requested quantity
-    const dedup = new Map<string, Partial<ScrapedLead>>();
-    for (const l of allLeads) {
-      const key = `${l.name}|${l.city}`;
-      if (!dedup.has(key)) dedup.set(key, l);
+    const dedup = new Map<string, any>();
+    for (const l of all) {
+      const k = `${l.name}|${l.city}`;
+      if (!dedup.has(k)) dedup.set(k, l);
     }
     const final = Array.from(dedup.values()).slice(0, quantity);
 
-    console.log(`[scrape-leads] returned ${final.length} leads (requested ${quantity})`);
+    console.log(`[scrape-leads] returned ${final.length}/${quantity}`);
 
     return new Response(JSON.stringify({ leads: final, total: final.length }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('[scrape-leads] fatal:', err);
-    const msg = err instanceof Error ? err.message : 'Erro desconhecido';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Erro' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
