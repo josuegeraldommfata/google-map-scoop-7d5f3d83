@@ -3,9 +3,10 @@ import { SearchForm } from "@/components/SearchForm";
 import { StatsCards } from "@/components/StatsCards";
 import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
-import { generateLeads } from "@/lib/leadGenerator";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
 import { Crosshair, Zap } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function Index() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -15,14 +16,21 @@ export default function Index() {
   const hotLeads = leads.filter(l => l.type === 'hot').length;
   const coldLeads = leads.filter(l => l.type === 'cold').length;
 
-  const handleSearch = useCallback((query: SearchQuery) => {
+  const handleSearch = useCallback(async (query: SearchQuery) => {
     setIsSearching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('scrape-leads', {
+        body: query,
+      });
+      if (error) throw error;
+      const newLeads: Lead[] = (data?.leads || []) as Lead[];
 
-    // Simulate async search with progress
-    setTimeout(() => {
-      const newLeads = generateLeads(query);
+      if (newLeads.length === 0) {
+        toast.warning('Nenhum lead encontrado. Tente outro nicho ou cidade.');
+      } else {
+        toast.success(`${newLeads.length} leads capturados!`);
+      }
 
-      // Deduplicate
       setLeads(prev => {
         const existingIds = new Set(prev.map(l => l.name + l.city));
         const unique = newLeads.filter(l => !existingIds.has(l.name + l.city));
@@ -40,9 +48,12 @@ export default function Index() {
         coldLeads: cold,
         executedAt: new Date().toISOString(),
       }, ...prev]);
-
+    } catch (e) {
+      console.error('Erro na busca:', e);
+      toast.error('Erro ao buscar leads. Tente novamente.');
+    } finally {
       setIsSearching(false);
-    }, 2000 + Math.random() * 1500);
+    }
   }, []);
 
   return (

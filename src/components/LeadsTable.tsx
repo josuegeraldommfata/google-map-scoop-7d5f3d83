@@ -130,6 +130,12 @@ export function LeadsTable({ leads }: Props) {
                       <span className="truncate max-w-[140px]">{lead.website.replace('https://', '')}</span>
                     </div>
                   )}
+                  {lead.instagram && (
+                    <div className="flex items-center gap-1.5 text-xs text-pink-400 mt-1">
+                      <Instagram className="w-3.5 h-3.5" />
+                      <span className="truncate max-w-[140px]">{lead.instagram}</span>
+                    </div>
+                  )}
                 </td>
                 <td className="p-3 text-center">
                   <div className="flex items-center justify-center gap-1">
