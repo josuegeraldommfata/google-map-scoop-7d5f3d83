@@ -60,6 +60,7 @@ export function generateLeads(query: SearchQuery): Lead[] {
         phone,
         whatsapp: hasWhatsapp ? phone.replace(/[()-\s]/g, '') : null,
         website: hasWebsite ? `https://www.${fullName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com.br` : null,
+        instagram: Math.random() > 0.5 ? `@${fullName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}` : null,
         rating,
         reviewCount,
         type: hasWebsite ? 'cold' : 'hot',

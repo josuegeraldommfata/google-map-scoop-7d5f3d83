@@ -3,7 +3,7 @@ import { Lead } from "@/types/lead";
 import { getWhatsAppLink, leadsToCSV, downloadFile } from "@/lib/leadGenerator";
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
-  Download, ChevronLeft, ChevronRight, Filter, Globe, Phone
+  Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,6 +128,12 @@ export function LeadsTable({ leads }: Props) {
                     <div className="flex items-center gap-1.5 text-xs text-cold mt-1">
                       <Globe className="w-3.5 h-3.5" />
                       <span className="truncate max-w-[140px]">{lead.website.replace('https://', '')}</span>
+                    </div>
+                  )}
+                  {lead.instagram && (
+                    <div className="flex items-center gap-1.5 text-xs text-pink-400 mt-1">
+                      <Instagram className="w-3.5 h-3.5" />
+                      <span className="truncate max-w-[140px]">{lead.instagram}</span>
                     </div>
                   )}
                 </td>
