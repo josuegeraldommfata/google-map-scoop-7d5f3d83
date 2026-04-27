@@ -189,6 +189,30 @@ async function enrichFromWebsite(website: string): Promise<{ instagram: string |
   }
 }
 
+// Fallback: tenta achar Instagram via busca pública (DuckDuckGo HTML — sem API key)
+async function findInstagramViaSearch(name: string, city: string): Promise<string | null> {
+  try {
+    const q = encodeURIComponent(`site:instagram.com "${name}" ${city}`);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(`https://duckduckgo.com/html/?q=${q}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LeadsHunter/1.0)' },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Pega o primeiro handle válido (evita explore/p/reels/stories etc)
+    const re = /instagram\.com\/(?!p\/|reel|reels|explore|stories|accounts|about|directory)([A-Za-z0-9_.]{2,30})/gi;
+    const matches = [...html.matchAll(re)];
+    if (!matches.length) return null;
+    const handle = matches[0][1].replace(/\/$/, '');
+    return `@${handle}`;
+  } catch {
+    return null;
+  }
+}
+
 function normalizePhone(p?: string): string {
   if (!p) return '';
   return p.replace(/[^\d+]/g, '');
