@@ -142,6 +142,10 @@ out tags center ${limit};
       console.log('[overpass] GET', url, 'bbox', `${s},${w},${n},${e}`);
       const res = await fetch(fullUrl, {
         method: 'GET',
+        headers: {
+          'User-Agent': 'LeadsHunter/1.0',
+          'Accept': 'application/json',
+        },
         signal: ctrl.signal,
       });
       clearTimeout(t);
