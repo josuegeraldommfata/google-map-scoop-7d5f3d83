@@ -161,7 +161,7 @@ out tags center ${limit};
 async function enrichFromWebsite(website: string): Promise<{ instagram: string | null; whatsapp: string | null }> {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
+    const t = setTimeout(() => ctrl.abort(), 3500);
     const res = await fetch(website, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LeadsHunter/1.0)' },
       signal: ctrl.signal,
