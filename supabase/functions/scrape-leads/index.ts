@@ -128,39 +128,43 @@ out tags center ${limit};
 out tags center ${limit};
 `;
   }
-  // tenta múltiplos endpoints do Overpass
+  // Race em paralelo entre múltiplos mirrors do Overpass
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.openstreetmap.ru/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   ];
-  for (const url of endpoints) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 18000);
-      const fullUrl = url + '?data=' + encodeURIComponent(body);
-      console.log('[overpass] GET', url, 'bbox', `${s},${w},${n},${e}`);
-      const res = await fetch(fullUrl, {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'LeadsHunter/1.0',
-          'Accept': 'application/json',
-        },
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      if (!res.ok) {
-        console.error('[overpass]', url, 'status', res.status);
-        continue;
+  const tryFetch = (url: string) =>
+    new Promise<any[]>(async (resolve, reject) => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 25000);
+        const res = await fetch(url + '?data=' + encodeURIComponent(body), {
+          method: 'GET',
+          headers: { 'User-Agent': 'LeadsHunter/1.0', 'Accept': 'application/json' },
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) {
+          console.error('[overpass]', url, 'status', res.status);
+          return reject(new Error(`status ${res.status}`));
+        }
+        const data = await res.json();
+        const els = data.elements || [];
+        console.log('[overpass]', url, 'returned', els.length);
+        resolve(els);
+      } catch (e) {
+        console.error('[overpass]', url, 'err', String(e));
+        reject(e);
       }
-      const data = await res.json();
-      console.log('[overpass]', url, 'returned', (data.elements || []).length, 'elements');
-      return data.elements || [];
-    } catch (e) {
-      console.error('[overpass]', url, 'err', String(e));
-    }
+    });
+
+  try {
+    return await Promise.any(endpoints.map(tryFetch));
+  } catch {
+    return [];
   }
-  return [];
 }
 
 async function enrichFromWebsite(website: string): Promise<{ instagram: string | null; whatsapp: string | null }> {
