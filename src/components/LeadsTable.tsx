@@ -138,11 +138,15 @@ export function LeadsTable({ leads }: Props) {
                   )}
                 </td>
                 <td className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-                    <span className="font-medium text-foreground">{lead.rating}</span>
-                    <span className="text-xs text-muted-foreground">({lead.reviewCount})</span>
-                  </div>
+                  {lead.rating > 0 ? (
+                    <div className="flex items-center justify-center gap-1">
+                      <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                      <span className="font-medium text-foreground">{lead.rating}</span>
+                      <span className="text-xs text-muted-foreground">({lead.reviewCount})</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
                 </td>
                 <td className="p-3 text-center">
                   {lead.type === 'hot' ? (
