@@ -102,9 +102,13 @@ export function buildPitchMessage(lead: { name: string; niche: string; city: str
 }
 
 export function getWhatsAppLink(phone: string, message?: string): string {
-  const clean = phone.replace(/\D/g, '');
+  // Limpa tudo que não é dígito e garante o código do país (55 = Brasil)
+  let clean = phone.replace(/\D/g, '');
+  // Remove zeros à esquerda (caso venha "0" antes do DDD)
+  clean = clean.replace(/^0+/, '');
   const number = clean.startsWith('55') ? clean : `55${clean}`;
   const msg = message || `Olá! Tudo bem? Encontrei sua empresa e gostaria de apresentar uma oportunidade. Podemos conversar?`;
+  // Formato: https://wa.me/55DDDNUMERO?text=URLencodedTEXT
   return `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
 }
 
