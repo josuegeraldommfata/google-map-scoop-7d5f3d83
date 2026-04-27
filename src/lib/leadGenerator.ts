@@ -75,10 +75,36 @@ export function generateLeads(query: SearchQuery): Lead[] {
   return leads;
 }
 
+export function buildPitchMessage(lead: { name: string; niche: string; city: string; website: string | null }): string {
+  const first = lead.name.split(/\s|-/)[0];
+  if (!lead.website) {
+    // LEAD QUENTE — não tem site
+    return [
+      `Olá! Tudo bem? 👋`,
+      ``,
+      `Aqui é da equipe Leads Hunter. Estava pesquisando os melhores ${lead.niche}s de ${lead.city} e a ${lead.name} apareceu com ótima reputação — mas notei uma coisa que pode estar custando clientes pra vocês: *vocês ainda não têm um site*.`,
+      ``,
+      `Hoje, mais de 80% das pessoas pesquisam no Google antes de fechar com qualquer ${lead.niche}. Sem um site, quem está procurando agora mesmo provavelmente está caindo direto na mão do seu concorrente. 😬`,
+      ``,
+      `Tenho uma proposta rápida pra te mostrar: um site profissional, otimizado pra aparecer no Google e converter visitantes em clientes — entregue em poucos dias e com investimento que cabe no bolso.`,
+      ``,
+      `Posso te mandar 2 ou 3 exemplos de sites que fizemos pra ${lead.niche}s e que já estão trazendo agendamentos todo dia? Leva 30 segundos pra você dar uma olhada. 🚀`,
+    ].join('\n');
+  }
+  // LEAD FRIO — tem site
+  return [
+    `Olá, tudo bem? 👋`,
+    ``,
+    `Vi a ${lead.name} aqui em ${lead.city} e dei uma olhada rápida no site de vocês. Tenho algumas observações pontuais que poderiam *aumentar bastante o número de clientes chegando pelo Google* — sem precisar gastar mais com anúncios.`,
+    ``,
+    `Posso te mandar uma análise gratuita de 2 minutos com o que ajustaria primeiro? Se fizer sentido a gente conversa, se não fizer, fica o presente. 😉`,
+  ].join('\n');
+}
+
 export function getWhatsAppLink(phone: string, message?: string): string {
   const clean = phone.replace(/\D/g, '');
   const number = clean.startsWith('55') ? clean : `55${clean}`;
-  const msg = message || `Olá! Encontrei sua empresa e gostaria de apresentar uma oportunidade. Podemos conversar?`;
+  const msg = message || `Olá! Tudo bem? Encontrei sua empresa e gostaria de apresentar uma oportunidade. Podemos conversar?`;
   return `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
 }
 
