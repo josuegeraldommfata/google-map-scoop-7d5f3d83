@@ -138,10 +138,8 @@ out tags center ${limit};
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 18000);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(body),
+      const res = await fetch(url + '?data=' + encodeURIComponent(body), {
+        method: 'GET',
         signal: ctrl.signal,
       });
       clearTimeout(t);
