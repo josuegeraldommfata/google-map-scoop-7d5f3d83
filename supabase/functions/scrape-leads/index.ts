@@ -138,7 +138,9 @@ out tags center ${limit};
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 18000);
-      const res = await fetch(url + '?data=' + encodeURIComponent(body), {
+      const fullUrl = url + '?data=' + encodeURIComponent(body);
+      console.log('[overpass] GET', url, 'bbox', `${s},${w},${n},${e}`);
+      const res = await fetch(fullUrl, {
         method: 'GET',
         signal: ctrl.signal,
       });
@@ -148,6 +150,7 @@ out tags center ${limit};
         continue;
       }
       const data = await res.json();
+      console.log('[overpass]', url, 'returned', (data.elements || []).length, 'elements');
       return data.elements || [];
     } catch (e) {
       console.error('[overpass]', url, 'err', String(e));
