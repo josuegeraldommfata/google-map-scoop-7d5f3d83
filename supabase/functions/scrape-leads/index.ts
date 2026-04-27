@@ -131,8 +131,8 @@ out tags center ${limit};
   }
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(body),
   });
   if (!res.ok) {
     console.error('[overpass] erro', res.status);
