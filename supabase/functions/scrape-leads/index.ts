@@ -261,6 +261,11 @@ Deno.serve(async (req) => {
             whatsapp = whatsapp || extra.whatsapp;
           }
 
+          // Fallback: se ainda não temos instagram, busca via DuckDuckGo
+          if (!instagram) {
+            instagram = await findInstagramViaSearch(tags.name, city);
+          }
+
           if (!whatsapp && phone) whatsapp = phone;
 
           const addressParts = [
