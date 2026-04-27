@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Lead } from "@/types/lead";
-import { getWhatsAppLink, leadsToCSV, downloadFile } from "@/lib/leadGenerator";
+import { getWhatsAppLink, leadsToCSV, downloadFile, buildPitchMessage } from "@/lib/leadGenerator";
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram
