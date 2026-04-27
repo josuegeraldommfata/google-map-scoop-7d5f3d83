@@ -111,7 +111,7 @@ async function overpassQuery(filter: string, niche: string, bbox: [number, numbe
     const [k, v] = filter.split('=');
     const valQ = v === '*' ? '' : `="${v}"`;
     body = `
-[out:json][timeout:25];
+[out:json][timeout:15];
 (
   node["${k}"${valQ}](${s},${w},${n},${e});
   way["${k}"${valQ}](${s},${w},${n},${e});
@@ -119,9 +119,8 @@ async function overpassQuery(filter: string, niche: string, bbox: [number, numbe
 out tags center ${limit};
 `;
   } else {
-    // busca por nome
     body = `
-[out:json][timeout:25];
+[out:json][timeout:15];
 (
   node["name"~"${niche}",i](${s},${w},${n},${e});
   way["name"~"${niche}",i](${s},${w},${n},${e});
@@ -129,17 +128,34 @@ out tags center ${limit};
 out tags center ${limit};
 `;
   }
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(body),
-  });
-  if (!res.ok) {
-    console.error('[overpass] erro', res.status);
-    return [];
+  // tenta múltiplos endpoints do Overpass
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.openstreetmap.ru/api/interpreter',
+  ];
+  for (const url of endpoints) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 18000);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(body),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      if (!res.ok) {
+        console.error('[overpass]', url, 'status', res.status);
+        continue;
+      }
+      const data = await res.json();
+      return data.elements || [];
+    } catch (e) {
+      console.error('[overpass]', url, 'err', String(e));
+    }
   }
-  const data = await res.json();
-  return data.elements || [];
+  return [];
 }
 
 async function enrichFromWebsite(website: string): Promise<{ instagram: string | null; whatsapp: string | null }> {
