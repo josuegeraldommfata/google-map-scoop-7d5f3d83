@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Lead } from "@/types/lead";
-import { getWhatsAppLink, leadsToCSV, downloadFile } from "@/lib/leadGenerator";
+import { getWhatsAppLink, leadsToCSV, downloadFile, buildPitchMessage } from "@/lib/leadGenerator";
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram
@@ -165,13 +165,24 @@ export function LeadsTable({ leads }: Props) {
                   <div className="flex items-center justify-center gap-1">
                     {lead.whatsapp && (
                       <a
-                        href={getWhatsAppLink(lead.whatsapp)}
+                        href={getWhatsAppLink(lead.whatsapp, buildPitchMessage(lead))}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1.5 rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors"
-                        title="Abrir WhatsApp"
+                        title="Abrir WhatsApp com mensagem persuasiva pronta"
                       >
                         <MessageCircle className="w-4 h-4" />
+                      </a>
+                    )}
+                    {lead.instagram && (
+                      <a
+                        href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-md bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 transition-colors"
+                        title="Abrir Instagram"
+                      >
+                        <Instagram className="w-4 h-4" />
                       </a>
                     )}
                     {lead.website && (
