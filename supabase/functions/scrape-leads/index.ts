@@ -1,13 +1,12 @@
-// Edge function: Google Maps web scraping (no API keys, pure HTTP)
-// Uses Google Maps internal search endpoint that returns structured data
+// Edge function: busca leads reais via OpenStreetMap (Overpass API) — sem API key
+// Para cada empresa encontrada, tenta extrair Instagram/WhatsApp do site (se houver)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-interface ScrapeRequest {
+interface SearchQuery {
   niche: string;
   keywords: string[];
   cities: string[];
@@ -15,293 +14,249 @@ interface ScrapeRequest {
   quantity: number;
 }
 
-const UAS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-];
-const ua = () => UAS[Math.floor(Math.random() * UAS.length)];
-
-// Strip Google's protective `)]}'` prefix and parse JSON
-function parseGooglePayload(text: string): any {
-  const cleaned = text.replace(/^\)\]\}'\s*/, '').trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // Try extracting first JSON array
-    const m = cleaned.match(/\[.*\]/s);
-    if (m) {
-      try { return JSON.parse(m[0]); } catch { /* fall through */ }
-    }
-    return null;
-  }
+interface Lead {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  whatsapp: string | null;
+  website: string | null;
+  instagram: string | null;
+  rating: number;
+  reviewCount: number;
+  type: 'hot' | 'cold';
+  niche: string;
+  city: string;
+  state: string;
+  foundAt: string;
 }
 
-// Recursively find all entries that look like place objects
-function findPlaces(node: any, out: any[] = []): any[] {
-  if (!node || typeof node !== 'object') return out;
-  if (Array.isArray(node)) {
-    // Heuristic: a place entry tends to be an array containing a name string at index 11
-    // and a coordinate sub-array. Easier to do brute walk.
-    for (const item of node) findPlaces(item, out);
-    // Also try treating this array as a place
-    if (node.length > 14 && typeof node[11] === 'string' && node[11].length > 1 && node[11].length < 120) {
-      out.push(node);
-    }
-  } else {
-    for (const k of Object.keys(node)) findPlaces(node[k], out);
+// Mapeia nicho em PT para tags do OSM
+function nicheToOsmFilter(niche: string): string {
+  const n = niche.toLowerCase();
+  const map: Record<string, string> = {
+    'advogado': 'office=lawyer',
+    'advocacia': 'office=lawyer',
+    'advogados': 'office=lawyer',
+    'restaurante': 'amenity=restaurant',
+    'restaurantes': 'amenity=restaurant',
+    'pizzaria': 'amenity=restaurant',
+    'lanchonete': 'amenity=fast_food',
+    'cafe': 'amenity=cafe',
+    'cafeteria': 'amenity=cafe',
+    'bar': 'amenity=bar',
+    'padaria': 'shop=bakery',
+    'mercado': 'shop=supermarket',
+    'farmacia': 'amenity=pharmacy',
+    'farmácia': 'amenity=pharmacy',
+    'dentista': 'amenity=dentist',
+    'medico': 'amenity=doctors',
+    'clinica': 'amenity=clinic',
+    'clínica': 'amenity=clinic',
+    'hospital': 'amenity=hospital',
+    'hotel': 'tourism=hotel',
+    'pousada': 'tourism=guest_house',
+    'academia': 'leisure=fitness_centre',
+    'salao': 'shop=hairdresser',
+    'salão': 'shop=hairdresser',
+    'barbearia': 'shop=hairdresser',
+    'estetica': 'shop=beauty',
+    'estética': 'shop=beauty',
+    'pet': 'shop=pet',
+    'petshop': 'shop=pet',
+    'oficina': 'shop=car_repair',
+    'mecanica': 'shop=car_repair',
+    'mecânica': 'shop=car_repair',
+    'imobiliaria': 'office=estate_agent',
+    'imobiliária': 'office=estate_agent',
+    'contador': 'office=accountant',
+    'contabilidade': 'office=accountant',
+    'arquiteto': 'office=architect',
+    'engenheiro': 'office=engineer',
+    'loja': 'shop=*',
+    'escola': 'amenity=school',
+    'igreja': 'amenity=place_of_worship',
+    'banco': 'amenity=bank',
+    'posto': 'amenity=fuel',
+  };
+  for (const [key, val] of Object.entries(map)) {
+    if (n.includes(key)) return val;
   }
-  return out;
+  // fallback: busca em qualquer "name" que case
+  return '';
 }
 
-function safeString(v: any): string | null {
-  return typeof v === 'string' && v.trim() ? v.trim() : null;
-}
-
-function deepFindFirst(node: any, predicate: (v: any) => boolean): any {
-  if (predicate(node)) return node;
-  if (!node || typeof node !== 'object') return null;
-  if (Array.isArray(node)) {
-    for (const it of node) {
-      const r = deepFindFirst(it, predicate);
-      if (r != null) return r;
-    }
-  } else {
-    for (const k of Object.keys(node)) {
-      const r = deepFindFirst(node[k], predicate);
-      if (r != null) return r;
-    }
-  }
-  return null;
-}
-
-function deepFindAll(node: any, predicate: (v: any) => boolean, out: any[] = []): any[] {
-  if (predicate(node)) out.push(node);
-  if (!node || typeof node !== 'object') return out;
-  if (Array.isArray(node)) {
-    for (const it of node) deepFindAll(it, predicate, out);
-  } else {
-    for (const k of Object.keys(node)) deepFindAll(node[k], predicate, out);
-  }
-  return out;
-}
-
-function extractFromPlace(place: any) {
-  const name = safeString(place[11]) || safeString(place[2]) || null;
-  if (!name) return null;
-
-  // Address often at place[18] or contained within array
-  const address = safeString(place[18]) || safeString(deepFindFirst(place, v => typeof v === 'string' && /\d.*[-,].*[A-Z]{2}/.test(v))) || null;
-
-  // Phone: find string matching Brazilian format
-  const phoneStr = deepFindFirst(place, v =>
-    typeof v === 'string' && /^\+?55?\s?\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/.test(v.replace(/\s/g, ' '))
-  ) || deepFindFirst(place, v =>
-    typeof v === 'string' && /\(\d{2}\)\s?\d{4,5}-\d{4}/.test(v)
-  );
-
-  // Website: any http url that's not google's
-  const websiteCandidates = deepFindAll(place, v =>
-    typeof v === 'string' &&
-    /^https?:\/\//i.test(v) &&
-    !/(google\.|gstatic|googleusercontent|ggpht|schema\.org|maps\.app)/i.test(v)
-  );
-  const website = websiteCandidates[0] || null;
-
-  // Instagram
-  const igCandidate = websiteCandidates.find((w: string) => /instagram\.com/i.test(w));
-  let instagram: string | null = null;
-  if (igCandidate) {
-    const m = String(igCandidate).match(/instagram\.com\/([A-Za-z0-9._]+)/i);
-    if (m) instagram = `@${m[1]}`;
-  }
-
-  // Rating: look for [rating, count] sub-array where rating is float 1-5
-  const ratingNode = deepFindFirst(place, v =>
-    Array.isArray(v) && v.length >= 2 &&
-    typeof v[0] === 'number' && v[0] >= 1 && v[0] <= 5 &&
-    typeof v[1] === 'number' && v[1] > 0 && v[1] < 1000000
-  );
-  const rating = ratingNode ? ratingNode[0] : 0;
-  const reviewCount = ratingNode ? ratingNode[1] : 0;
-
+async function geocodeCity(city: string, state: string): Promise<{ lat: number; lon: number; bbox: [number, number, number, number] } | null> {
+  const q = encodeURIComponent(`${city}, ${state}, Brazil`);
+  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'LeadsHunter/1.0 (scraper)' },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data?.length) return null;
+  const item = data[0];
+  const bb = item.boundingbox.map(Number); // [south, north, west, east]
   return {
-    name,
-    address,
-    phone: phoneStr ? String(phoneStr) : null,
-    website,
-    instagram,
-    rating,
-    reviewCount,
+    lat: parseFloat(item.lat),
+    lon: parseFloat(item.lon),
+    bbox: [bb[0], bb[2], bb[1], bb[3]], // [south, west, north, east]
   };
 }
 
-async function scrapeMaps(query: string, city: string, state: string, limit: number) {
-  // Google Maps internal search endpoint — returns JS payload with structured data
-  const term = `${query} ${city} ${state}`;
-  const url = `https://www.google.com/search?tbm=map&q=${encodeURIComponent(term)}&hl=pt-BR&gl=br`;
-
-  console.log(`[scrape] GET ${term}`);
-
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': ua(),
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'pt-BR,pt;q=0.9',
-      'Referer': 'https://www.google.com/maps',
-    },
+async function overpassQuery(filter: string, niche: string, bbox: [number, number, number, number], limit: number) {
+  const [s, w, n, e] = bbox;
+  let body: string;
+  if (filter) {
+    const [k, v] = filter.split('=');
+    const valQ = v === '*' ? '' : `="${v}"`;
+    body = `
+[out:json][timeout:25];
+(
+  node["${k}"${valQ}](${s},${w},${n},${e});
+  way["${k}"${valQ}](${s},${w},${n},${e});
+);
+out tags center ${limit};
+`;
+  } else {
+    // busca por nome
+    body = `
+[out:json][timeout:25];
+(
+  node["name"~"${niche}",i](${s},${w},${n},${e});
+  way["name"~"${niche}",i](${s},${w},${n},${e});
+);
+out tags center ${limit};
+`;
+  }
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body,
   });
-
   if (!res.ok) {
-    console.error(`[scrape] HTTP ${res.status} for "${term}"`);
+    console.error('[overpass] erro', res.status);
     return [];
   }
-
-  const text = await res.text();
-  const data = parseGooglePayload(text);
-
-  if (!data) {
-    console.warn(`[scrape] could not parse payload for "${term}" (len=${text.length})`);
-    // Fallback: try regex extraction on raw HTML/text
-    return regexFallback(text, query, city, state, limit);
-  }
-
-  const places = findPlaces(data);
-  console.log(`[scrape] found ${places.length} place candidates for "${term}"`);
-
-  const results: any[] = [];
-  const seen = new Set<string>();
-
-  for (const p of places) {
-    if (results.length >= limit) break;
-    const ext = extractFromPlace(p);
-    if (!ext || !ext.name) continue;
-    const key = ext.name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    const phoneDigits = ext.phone ? ext.phone.replace(/\D/g, '') : '';
-    const whatsapp = phoneDigits.length >= 10
-      ? (phoneDigits.length <= 11 ? `55${phoneDigits}` : phoneDigits)
-      : null;
-
-    results.push({
-      id: `${city}-${results.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: ext.name,
-      address: ext.address || `${city}, ${state}`,
-      phone: ext.phone || 'N/A',
-      whatsapp,
-      website: ext.website,
-      instagram: ext.instagram,
-      rating: ext.rating || 0,
-      reviewCount: ext.reviewCount || 0,
-      type: !ext.website ? 'hot' : 'cold',
-      niche: query,
-      city,
-      state,
-      foundAt: new Date().toISOString(),
-    });
-  }
-
-  return results;
+  const data = await res.json();
+  return data.elements || [];
 }
 
-// Fallback: brute regex extraction when JSON parse fails
-function regexFallback(text: string, query: string, city: string, state: string, limit: number) {
-  const results: any[] = [];
-  const seen = new Set<string>();
-
-  // Match place entries with name + lat/lng nearby
-  const namePattern = /"([^"\\]{4,80})",null,\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/g;
-  let m;
-  while ((m = namePattern.exec(text)) !== null && results.length < limit) {
-    const name = m[1];
-    if (seen.has(name) || /^https?:|\.(com|jpg|png|svg)$|^image|maps\.app/i.test(name)) continue;
-    seen.add(name);
-
-    // Search ~2000 chars around match for phone & website
-    const start = Math.max(0, m.index - 500);
-    const end = Math.min(text.length, m.index + 2000);
-    const slice = text.slice(start, end);
-
-    const phoneM = slice.match(/(\(\d{2}\)\s?\d{4,5}-?\d{4}|\+?55\s?\d{2}\s?\d{4,5}-?\d{4})/);
-    const webM = slice.match(/"(https?:\/\/(?!(?:www\.)?(?:google\.|gstatic|googleusercontent|ggpht|schema\.org|maps\.app))[^"\s]+)"/);
-    const igM = slice.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
-    const ratingM = slice.match(/\[(\d\.\d),(\d{1,5})\]/);
-
-    const phone = phoneM ? phoneM[1] : 'N/A';
-    const phoneDigits = phone.replace(/\D/g, '');
-    const whatsapp = phoneDigits.length >= 10
-      ? (phoneDigits.length <= 11 ? `55${phoneDigits}` : phoneDigits)
-      : null;
-
-    results.push({
-      id: `${city}-${results.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name,
-      address: `${city}, ${state}`,
-      phone,
-      whatsapp,
-      website: webM ? webM[1] : null,
-      instagram: igM ? `@${igM[1]}` : null,
-      rating: ratingM ? parseFloat(ratingM[1]) : 0,
-      reviewCount: ratingM ? parseInt(ratingM[2]) : 0,
-      type: !webM ? 'hot' : 'cold',
-      niche: query,
-      city,
-      state,
-      foundAt: new Date().toISOString(),
+async function enrichFromWebsite(website: string): Promise<{ instagram: string | null; whatsapp: string | null }> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch(website, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LeadsHunter/1.0)' },
+      signal: ctrl.signal,
     });
+    clearTimeout(t);
+    if (!res.ok) return { instagram: null, whatsapp: null };
+    const html = await res.text();
+    const ig = html.match(/instagram\.com\/([A-Za-z0-9_.]+)/i);
+    const wa = html.match(/(?:wa\.me|api\.whatsapp\.com\/send\?phone=)\/?([0-9+]+)/i);
+    return {
+      instagram: ig ? `@${ig[1].replace(/\/$/, '')}` : null,
+      whatsapp: wa ? wa[1].replace(/\D/g, '') : null,
+    };
+  } catch {
+    return { instagram: null, whatsapp: null };
   }
+}
 
-  console.log(`[regexFallback] extracted ${results.length} from text(len=${text.length})`);
-  return results;
+function normalizePhone(p?: string): string {
+  if (!p) return '';
+  return p.replace(/[^\d+]/g, '');
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const body: ScrapeRequest = await req.json();
-    const { niche, keywords = [], cities, state, quantity } = body;
+    const query = (await req.json()) as SearchQuery;
+    const total = Math.max(1, Math.min(500, query.quantity || 20));
+    const perCity = Math.ceil(total / Math.max(1, query.cities.length));
+    const filter = nicheToOsmFilter(query.niche);
+    console.log('[leads] niche=', query.niche, 'filter=', filter, 'cities=', query.cities);
 
-    if (!niche || !cities?.length || !state || !quantity) {
-      return new Response(JSON.stringify({ error: 'Campos obrigatórios: niche, cities, state, quantity' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const allLeads: Lead[] = [];
 
-    const perCity = Math.ceil(quantity / cities.length);
-    const queries = [niche, ...keywords.slice(0, 1)].filter(Boolean);
-
-    const all: any[] = [];
-    const tasks: Promise<void>[] = [];
-    for (const city of cities) {
-      for (const q of queries) {
-        tasks.push(
-          scrapeMaps(q, city, state, perCity)
-            .then((found) => { all.push(...found); })
-            .catch((e) => console.error(`[task] ${q}/${city}:`, e.message))
-        );
+    for (const city of query.cities) {
+      const geo = await geocodeCity(city.trim(), query.state);
+      if (!geo) {
+        console.log('[leads] cidade nao encontrada:', city);
+        continue;
       }
+      const elements = await overpassQuery(filter, query.niche, geo.bbox, perCity * 2);
+      console.log(`[leads] ${city}: ${elements.length} elementos OSM`);
+
+      const candidates = elements
+        .filter((el: any) => el.tags?.name)
+        .slice(0, perCity);
+
+      // Enriquece em paralelo (limitado)
+      const enriched = await Promise.all(
+        candidates.map(async (el: any, idx: number) => {
+          const tags = el.tags;
+          const website: string | null = tags.website || tags['contact:website'] || tags.url || null;
+          const phone = normalizePhone(tags.phone || tags['contact:phone']);
+          let instagram: string | null = tags['contact:instagram']
+            ? `@${tags['contact:instagram'].replace(/.*instagram\.com\//, '').replace(/\/$/, '')}`
+            : null;
+          let whatsapp: string | null = normalizePhone(tags['contact:whatsapp']) || null;
+
+          if (website && (!instagram || !whatsapp)) {
+            const url = website.startsWith('http') ? website : `https://${website}`;
+            const extra = await enrichFromWebsite(url);
+            instagram = instagram || extra.instagram;
+            whatsapp = whatsapp || extra.whatsapp;
+          }
+
+          if (!whatsapp && phone) whatsapp = phone;
+
+          const addressParts = [
+            tags['addr:street'],
+            tags['addr:housenumber'],
+            tags['addr:suburb'] || tags['addr:neighbourhood'],
+            city,
+            query.state,
+          ].filter(Boolean);
+
+          const lead: Lead = {
+            id: `${el.type}-${el.id}`,
+            name: tags.name,
+            address: addressParts.join(', ') || `${city}, ${query.state}`,
+            phone: phone || '',
+            whatsapp,
+            website: website ? (website.startsWith('http') ? website : `https://${website}`) : null,
+            instagram,
+            rating: 0,
+            reviewCount: 0,
+            type: website ? 'cold' : 'hot',
+            niche: query.niche,
+            city,
+            state: query.state,
+            foundAt: new Date().toISOString(),
+          };
+          return lead;
+        })
+      );
+
+      allLeads.push(...enriched);
+      if (allLeads.length >= total) break;
     }
-    await Promise.all(tasks);
 
-    const dedup = new Map<string, any>();
-    for (const l of all) {
-      const k = `${l.name}|${l.city}`;
-      if (!dedup.has(k)) dedup.set(k, l);
-    }
-    const final = Array.from(dedup.values()).slice(0, quantity);
+    const finalLeads = allLeads.slice(0, total);
+    console.log(`[leads] retornando ${finalLeads.length}`);
 
-    console.log(`[scrape-leads] returned ${final.length}/${quantity}`);
-
-    return new Response(JSON.stringify({ leads: final, total: final.length }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ leads: finalLeads, total: finalLeads.length }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (err) {
-    console.error('[scrape-leads] fatal:', err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Erro' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  } catch (e) {
+    console.error('[leads] erro', e);
+    return new Response(JSON.stringify({ error: String(e), leads: [], total: 0 }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
