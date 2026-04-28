@@ -29,6 +29,8 @@ interface Lead {
   city: string;
   state: string;
   foundAt: string;
+  phoneFromInstagram?: boolean;
+  adsStatus?: 'tubarao' | 'none' | 'unknown';
 }
 
 // Mapeia nicho em PT para tags do OSM
