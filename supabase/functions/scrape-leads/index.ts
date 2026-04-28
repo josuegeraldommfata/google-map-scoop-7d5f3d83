@@ -390,6 +390,25 @@ Deno.serve(async (req) => {
 
           if (!whatsapp && phone) whatsapp = phone;
 
+          // === Instagram Discovery ===
+          // Se telefone atual NÃO é celular válido e temos instagram, tenta enriquecer.
+          let phoneFromInstagram = false;
+          const currentBest = whatsapp || phone;
+          const needsBetterPhone = !currentBest || !isMobileBR(currentBest);
+          if (instagram && needsBetterPhone) {
+            const igPhone = await enrichFromInstagram(instagram);
+            if (igPhone && isMobileBR(igPhone)) {
+              whatsapp = igPhone;
+              phoneFromInstagram = true;
+            }
+          }
+
+          // === TUBARÃO: Meta Ads Library ===
+          // Roda em paralelo com o resto, mas só pra leads "interessantes" (têm contato)
+          const adsStatus = (whatsapp || website)
+            ? await checkAdsLibrary(tags.name)
+            : 'unknown';
+
           const addressParts = [
             tags['addr:street'],
             tags['addr:housenumber'],
@@ -413,6 +432,8 @@ Deno.serve(async (req) => {
             city,
             state: query.state,
             foundAt: new Date().toISOString(),
+            phoneFromInstagram,
+            adsStatus,
           };
           return lead;
         })
