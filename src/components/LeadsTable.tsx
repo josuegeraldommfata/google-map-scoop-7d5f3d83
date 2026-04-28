@@ -82,6 +82,7 @@ export function LeadsTable({ leads }: Props) {
             {([
               ['all', 'Todos', Filter],
               ['premium', 'Premium', Crown],
+              ['tubarao', 'TUBARÃO', Megaphone],
               ['hot', 'Quentes', Flame],
               ['cold', 'Frios', Snowflake],
             ] as const).map(([key, label, Icon]) => (
@@ -93,6 +94,7 @@ export function LeadsTable({ leads }: Props) {
                     ? key === 'hot' ? 'bg-hot/20 text-hot'
                     : key === 'cold' ? 'bg-cold/20 text-cold'
                     : key === 'premium' ? 'bg-yellow-500/20 text-yellow-500'
+                    : key === 'tubarao' ? 'bg-amber-500/25 text-amber-400'
                     : 'bg-secondary text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
