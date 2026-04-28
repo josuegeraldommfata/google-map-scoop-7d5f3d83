@@ -31,6 +31,8 @@ export function LeadsTable({ leads }: Props) {
 
     if (filter === 'premium') {
       result = result.filter(l => getLeadTier(l) === 'premium');
+    } else if (filter === 'tubarao') {
+      result = result.filter(l => l.adsStatus === 'tubarao');
     } else if (filter !== 'all') {
       result = result.filter(l => l.type === filter);
     }
