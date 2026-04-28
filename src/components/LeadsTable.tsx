@@ -1,9 +1,13 @@
 import { useState, useMemo } from "react";
 import { Lead } from "@/types/lead";
-import { getWhatsAppLink, leadsToCSV, downloadFile, buildPitchMessage } from "@/lib/leadGenerator";
+import {
+  getWhatsAppLink, leadsToCSV, downloadFile, buildPitchMessage,
+  classifyPhone, getLeadTier,
+} from "@/lib/leadGenerator";
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
-  Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram
+  Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram,
+  Crown, Smartphone, PhoneOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,13 +21,24 @@ const PAGE_SIZE = 10;
 
 export function LeadsTable({ leads }: Props) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<'all' | 'hot' | 'cold'>('all');
+  const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews'>('rating');
+  const [onlyMobile, setOnlyMobile] = useState(false);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     let result = leads;
-    if (filter !== 'all') result = result.filter(l => l.type === filter);
+
+    if (filter === 'premium') {
+      result = result.filter(l => getLeadTier(l) === 'premium');
+    } else if (filter !== 'all') {
+      result = result.filter(l => l.type === filter);
+    }
+
+    if (onlyMobile) {
+      result = result.filter(l => classifyPhone(l.whatsapp || l.phone) === 'mobile');
+    }
+
     if (search) {
       const s = search.toLowerCase();
       result = result.filter(l =>
@@ -38,7 +53,7 @@ export function LeadsTable({ leads }: Props) {
       return a.name.localeCompare(b.name);
     });
     return result;
-  }, [leads, filter, search, sortBy]);
+  }, [leads, filter, onlyMobile, search, sortBy]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -62,13 +77,21 @@ export function LeadsTable({ leads }: Props) {
             />
           </div>
           <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-            {([['all', 'Todos', Filter], ['hot', 'Quentes', Flame], ['cold', 'Frios', Snowflake]] as const).map(([key, label, Icon]) => (
+            {([
+              ['all', 'Todos', Filter],
+              ['premium', 'Premium', Crown],
+              ['hot', 'Quentes', Flame],
+              ['cold', 'Frios', Snowflake],
+            ] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
                 onClick={() => { setFilter(key); setPage(1); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   filter === key
-                    ? key === 'hot' ? 'bg-hot/20 text-hot' : key === 'cold' ? 'bg-cold/20 text-cold' : 'bg-secondary text-foreground'
+                    ? key === 'hot' ? 'bg-hot/20 text-hot'
+                    : key === 'cold' ? 'bg-cold/20 text-cold'
+                    : key === 'premium' ? 'bg-yellow-500/20 text-yellow-500'
+                    : 'bg-secondary text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -77,6 +100,19 @@ export function LeadsTable({ leads }: Props) {
               </button>
             ))}
           </div>
+
+          <button
+            onClick={() => { setOnlyMobile(v => !v); setPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              onlyMobile
+                ? 'bg-success/15 text-success border-success/40'
+                : 'bg-muted text-muted-foreground border-border hover:text-foreground'
+            }`}
+            title="Esconde leads sem celular (sem dígito 9 após DDD)"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            Apenas Celulares
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -110,10 +146,23 @@ export function LeadsTable({ leads }: Props) {
             </tr>
           </thead>
           <tbody>
-            {paginated.map(lead => (
+            {paginated.map(lead => {
+              const tier = getLeadTier(lead);
+              const phoneKind = classifyPhone(lead.whatsapp || lead.phone);
+              const isMobile = phoneKind === 'mobile';
+
+              return (
               <tr key={lead.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                 <td className="p-3">
-                  <p className="font-medium text-foreground">{lead.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">{lead.name}</p>
+                    {tier === 'premium' && (
+                      <Badge className="bg-gradient-to-r from-yellow-500/30 to-amber-400/30 text-yellow-400 border border-yellow-500/50 gap-1 text-[10px]">
+                        <Crown className="w-3 h-3" />
+                        Premium
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-0.5">{lead.niche} • {lead.city}</p>
                 </td>
                 <td className="p-3 hidden lg:table-cell">
@@ -122,7 +171,17 @@ export function LeadsTable({ leads }: Props) {
                 <td className="p-3">
                   <div className="flex items-center gap-1.5 text-xs text-foreground">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                    {lead.phone}
+                    {lead.phone || '—'}
+                    {phoneKind === 'mobile' && (
+                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
+                        ⭐ WhatsApp
+                      </span>
+                    )}
+                    {phoneKind === 'landline' && (
+                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                        📞 Fixo
+                      </span>
+                    )}
                   </div>
                   {lead.website && (
                     <div className="flex items-center gap-1.5 text-xs text-cold mt-1">
@@ -149,10 +208,15 @@ export function LeadsTable({ leads }: Props) {
                   )}
                 </td>
                 <td className="p-3 text-center">
-                  {lead.type === 'hot' ? (
+                  {tier === 'premium' ? (
+                    <Badge className="bg-gradient-to-r from-yellow-500/20 to-amber-400/20 text-yellow-400 border border-yellow-500/40 gap-1 text-xs">
+                      <Crown className="w-3 h-3" />
+                      Premium
+                    </Badge>
+                  ) : tier === 'low_presence' ? (
                     <Badge className="bg-hot/15 text-hot border-hot/30 gap-1 text-xs">
                       <Flame className="w-3 h-3" />
-                      Quente
+                      Baixa Presença
                     </Badge>
                   ) : (
                     <Badge className="bg-cold/15 text-cold border-cold/30 gap-1 text-xs">
@@ -163,7 +227,7 @@ export function LeadsTable({ leads }: Props) {
                 </td>
                 <td className="p-3 text-center">
                   <div className="flex items-center justify-center gap-1">
-                    {lead.whatsapp && (
+                    {lead.whatsapp && isMobile ? (
                       <a
                         href={getWhatsAppLink(lead.whatsapp, buildPitchMessage(lead))}
                         target="_blank"
@@ -173,7 +237,15 @@ export function LeadsTable({ leads }: Props) {
                       >
                         <MessageCircle className="w-4 h-4" />
                       </a>
-                    )}
+                    ) : lead.whatsapp ? (
+                      <button
+                        disabled
+                        className="p-1.5 rounded-md bg-muted text-muted-foreground/50 cursor-not-allowed"
+                        title="Telefone fixo — não disponível no WhatsApp"
+                      >
+                        <PhoneOff className="w-4 h-4" />
+                      </button>
+                    ) : null}
                     {lead.instagram && (
                       <a
                         href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`}
@@ -204,7 +276,7 @@ export function LeadsTable({ leads }: Props) {
                   </div>
                 </td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>

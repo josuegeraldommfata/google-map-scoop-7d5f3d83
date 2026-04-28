@@ -1,3 +1,6 @@
+export type LeadTier = 'premium' | 'hot' | 'cold' | 'low_presence';
+export type PhoneKind = 'mobile' | 'landline' | 'unknown';
+
 export interface Lead {
   id: string;
   name: string;
