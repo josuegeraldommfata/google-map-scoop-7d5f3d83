@@ -158,12 +158,17 @@ export function LeadsTable({ leads }: Props) {
               return (
               <tr key={lead.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                 <td className="p-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-foreground">{lead.name}</p>
                     {tier === 'premium' && (
                       <Badge className="bg-gradient-to-r from-yellow-500/30 to-amber-400/30 text-yellow-400 border border-yellow-500/50 gap-1 text-[10px]">
                         <Crown className="w-3 h-3" />
                         Premium
+                      </Badge>
+                    )}
+                    {lead.adsStatus === 'tubarao' && (
+                      <Badge className="bg-gradient-to-r from-amber-500/30 to-orange-500/30 text-amber-300 border border-amber-500/60 gap-1 text-[10px] font-bold">
+                        🦈 TUBARÃO
                       </Badge>
                     )}
                   </div>
