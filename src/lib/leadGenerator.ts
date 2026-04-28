@@ -1,4 +1,25 @@
-import { Lead, SearchQuery } from "@/types/lead";
+import { Lead, LeadTier, PhoneKind, SearchQuery } from "@/types/lead";
+
+/**
+ * Classifica telefone BR: celular precisa ter 11 dígitos (com DDD) e o
+ * primeiro dígito após o DDD deve ser '9'. Caso contrário é fixo.
+ */
+export function classifyPhone(raw: string | null | undefined): PhoneKind {
+  if (!raw) return 'unknown';
+  let d = raw.replace(/\D/g, '').replace(/^0+/, '');
+  if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+  if (d.length === 11) return d[2] === '9' ? 'mobile' : 'landline';
+  if (d.length === 10) return 'landline';
+  return 'unknown';
+}
+
+export function getLeadTier(lead: Lead): LeadTier {
+  const hasSite = !!lead.website;
+  const hasIg = !!lead.instagram;
+  if (hasSite && hasIg && lead.rating > 4.0 && lead.reviewCount > 10) return 'premium';
+  if (!hasSite) return 'low_presence';
+  return 'cold';
+}
 
 const BUSINESS_NAMES: Record<string, string[]> = {
   dentista: ["Odonto Smile", "Clínica Dental Care", "Sorriso Perfeito", "Dr. Dentes", "OdontoVida", "Clínica Oral Plus", "DentBem", "Sorriso & Cia", "OdontoTop", "Clínica DentalPro", "Espaço Dental", "Prime Odonto", "Dental Center", "Clínica do Sorriso", "OdontoClass"],
