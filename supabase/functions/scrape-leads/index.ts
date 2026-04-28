@@ -29,6 +29,8 @@ interface Lead {
   city: string;
   state: string;
   foundAt: string;
+  phoneFromInstagram?: boolean;
+  adsStatus?: 'tubarao' | 'none' | 'unknown';
 }
 
 // Mapeia nicho em PT para tags do OSM
@@ -218,6 +220,126 @@ function normalizePhone(p?: string): string {
   return p.replace(/[^\d+]/g, '');
 }
 
+// Considera celular BR válido (11 dígitos, 9 após DDD)
+function isMobileBR(p: string): boolean {
+  let d = p.replace(/\D/g, '').replace(/^0+/, '');
+  if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+  return d.length === 11 && d[2] === '9';
+}
+
+// Tenta extrair telefone de uma string (formato BR)
+function extractPhoneBR(text: string): string | null {
+  // (11) 99999-9999 | 11999999999 | +55 11 99999-9999
+  const re = /(?:\+?55[\s.-]?)?\(?([1-9]{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})/g;
+  const matches = [...text.matchAll(re)];
+  for (const m of matches) {
+    const ddd = m[1];
+    const part1 = m[2];
+    const part2 = m[3];
+    const full = `${ddd}${part1}${part2}`.replace(/\D/g, '');
+    if (full.length === 11 && full[2] === '9') return full;
+  }
+  return null;
+}
+
+/**
+ * Instagram Discovery — tenta:
+ * 1) ig embed público (https://www.instagram.com/{handle}/embed) → menos bloqueado
+ * 2) se a bio tiver linktr.ee/beacons.ai/lnk.bio → segue e raspa
+ * Retorna o telefone celular encontrado, se houver.
+ */
+async function enrichFromInstagram(handle: string): Promise<string | null> {
+  const clean = handle.replace(/^@/, '').replace(/\/$/, '');
+  const tryFetch = async (url: string, timeout = 4000): Promise<string> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        },
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      if (!res.ok) return '';
+      return await res.text();
+    } catch {
+      clearTimeout(t);
+      return '';
+    }
+  };
+
+  // 1) embed do IG
+  const embedHtml = await tryFetch(`https://www.instagram.com/${clean}/embed/`);
+  let phone = embedHtml ? extractPhoneBR(embedHtml) : null;
+  let bioHtml = embedHtml;
+
+  // 2) tenta página principal se embed nao trouxe nada
+  if (!phone) {
+    const mainHtml = await tryFetch(`https://www.instagram.com/${clean}/`);
+    if (mainHtml) {
+      bioHtml = bioHtml + ' ' + mainHtml;
+      phone = extractPhoneBR(mainHtml);
+    }
+  }
+
+  // 3) procura link de árvore de links na bio e raspa ele
+  if (!phone && bioHtml) {
+    const linkMatch = bioHtml.match(/https?:\/\/(?:linktr\.ee|beacons\.ai|lnk\.bio|bio\.link|hotm\.art|linklist\.bio)\/[A-Za-z0-9_.\-/]+/i);
+    if (linkMatch) {
+      const treeHtml = await tryFetch(linkMatch[0], 5000);
+      if (treeHtml) {
+        // procura wa.me primeiro, é o mais confiável
+        const wa = treeHtml.match(/wa\.me\/(?:55)?(\d{10,13})/i);
+        if (wa) {
+          const num = wa[1].replace(/^55/, '');
+          if (num.length === 11 && num[2] === '9') phone = num;
+        }
+        if (!phone) phone = extractPhoneBR(treeHtml);
+      }
+    }
+  }
+
+  if (phone) console.log(`[ig-discovery] @${clean} → telefone encontrado: ${phone}`);
+  else console.log(`[ig-discovery] @${clean} → nada`);
+  return phone;
+}
+
+/**
+ * Checa Meta Ads Library — busca por nome da empresa.
+ * Endpoint público (não-API): retorna HTML que indica se há anúncios ativos.
+ */
+async function checkAdsLibrary(name: string): Promise<'tubarao' | 'none' | 'unknown'> {
+  try {
+    const q = encodeURIComponent(name);
+    const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BR&q=${q}&search_type=keyword_unordered`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return 'unknown';
+    const html = await res.text();
+    // Heurística: se a página menciona "resultado(s)" e o nome da empresa, há anúncios.
+    // O padrão "Nenhum resultado encontrado" indica vazio.
+    if (/Nenhum resultado encontrado|No results found/i.test(html)) return 'none';
+    // Procura indicador de cards de anúncio
+    if (/Biblioteca de an[úu]ncios|Ad Library/i.test(html) && new RegExp(name.split(' ')[0], 'i').test(html)) {
+      return 'tubarao';
+    }
+    return 'none';
+  } catch (e) {
+    console.error('[ads-library] erro', String(e));
+    return 'unknown';
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -268,6 +390,25 @@ Deno.serve(async (req) => {
 
           if (!whatsapp && phone) whatsapp = phone;
 
+          // === Instagram Discovery ===
+          // Se telefone atual NÃO é celular válido e temos instagram, tenta enriquecer.
+          let phoneFromInstagram = false;
+          const currentBest = whatsapp || phone;
+          const needsBetterPhone = !currentBest || !isMobileBR(currentBest);
+          if (instagram && needsBetterPhone) {
+            const igPhone = await enrichFromInstagram(instagram);
+            if (igPhone && isMobileBR(igPhone)) {
+              whatsapp = igPhone;
+              phoneFromInstagram = true;
+            }
+          }
+
+          // === TUBARÃO: Meta Ads Library ===
+          // Roda em paralelo com o resto, mas só pra leads "interessantes" (têm contato)
+          const adsStatus = (whatsapp || website)
+            ? await checkAdsLibrary(tags.name)
+            : 'unknown';
+
           const addressParts = [
             tags['addr:street'],
             tags['addr:housenumber'],
@@ -291,6 +432,8 @@ Deno.serve(async (req) => {
             city,
             state: query.state,
             foundAt: new Date().toISOString(),
+            phoneFromInstagram,
+            adsStatus,
           };
           return lead;
         })

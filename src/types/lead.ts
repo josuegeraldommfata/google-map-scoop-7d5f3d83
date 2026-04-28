@@ -1,5 +1,6 @@
 export type LeadTier = 'premium' | 'hot' | 'cold' | 'low_presence';
 export type PhoneKind = 'mobile' | 'landline' | 'unknown';
+export type AdsStatus = 'tubarao' | 'none' | 'unknown';
 
 export interface Lead {
   id: string;
@@ -16,6 +17,10 @@ export interface Lead {
   city: string;
   state: string;
   foundAt: string;
+  /** true se telefone foi enriquecido via bio do Instagram/Linktree */
+  phoneFromInstagram?: boolean;
+  /** status na biblioteca de anúncios (Meta) */
+  adsStatus?: AdsStatus;
 }
 
 export interface SearchQuery {

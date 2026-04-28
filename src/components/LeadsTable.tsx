@@ -7,7 +7,7 @@ import {
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram,
-  Crown, Smartphone, PhoneOff,
+  Crown, Smartphone, PhoneOff, Megaphone, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ const PAGE_SIZE = 10;
 
 export function LeadsTable({ leads }: Props) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium'>('all');
+  const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium' | 'tubarao'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews'>('rating');
   const [onlyMobile, setOnlyMobile] = useState(false);
   const [page, setPage] = useState(1);
@@ -31,6 +31,8 @@ export function LeadsTable({ leads }: Props) {
 
     if (filter === 'premium') {
       result = result.filter(l => getLeadTier(l) === 'premium');
+    } else if (filter === 'tubarao') {
+      result = result.filter(l => l.adsStatus === 'tubarao');
     } else if (filter !== 'all') {
       result = result.filter(l => l.type === filter);
     }
@@ -80,6 +82,7 @@ export function LeadsTable({ leads }: Props) {
             {([
               ['all', 'Todos', Filter],
               ['premium', 'Premium', Crown],
+              ['tubarao', 'TUBARÃO', Megaphone],
               ['hot', 'Quentes', Flame],
               ['cold', 'Frios', Snowflake],
             ] as const).map(([key, label, Icon]) => (
@@ -91,6 +94,7 @@ export function LeadsTable({ leads }: Props) {
                     ? key === 'hot' ? 'bg-hot/20 text-hot'
                     : key === 'cold' ? 'bg-cold/20 text-cold'
                     : key === 'premium' ? 'bg-yellow-500/20 text-yellow-500'
+                    : key === 'tubarao' ? 'bg-amber-500/25 text-amber-400'
                     : 'bg-secondary text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
@@ -154,12 +158,17 @@ export function LeadsTable({ leads }: Props) {
               return (
               <tr key={lead.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                 <td className="p-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-foreground">{lead.name}</p>
                     {tier === 'premium' && (
                       <Badge className="bg-gradient-to-r from-yellow-500/30 to-amber-400/30 text-yellow-400 border border-yellow-500/50 gap-1 text-[10px]">
                         <Crown className="w-3 h-3" />
                         Premium
+                      </Badge>
+                    )}
+                    {lead.adsStatus === 'tubarao' && (
+                      <Badge className="bg-gradient-to-r from-amber-500/30 to-orange-500/30 text-amber-300 border border-amber-500/60 gap-1 text-[10px] font-bold">
+                        🦈 TUBARÃO
                       </Badge>
                     )}
                   </div>
@@ -169,17 +178,22 @@ export function LeadsTable({ leads }: Props) {
                   <p className="text-xs text-muted-foreground max-w-xs truncate">{lead.address}</p>
                 </td>
                 <td className="p-3">
-                  <div className="flex items-center gap-1.5 text-xs text-foreground">
+                  <div className="flex items-center gap-1.5 text-xs text-foreground flex-wrap">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                    {lead.phone || '—'}
+                    {lead.whatsapp || lead.phone || '—'}
                     {phoneKind === 'mobile' && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
                         ⭐ WhatsApp
                       </span>
                     )}
                     {phoneKind === 'landline' && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
                         📞 Fixo
+                      </span>
+                    )}
+                    {lead.phoneFromInstagram && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/15 text-pink-400" title="Telefone descoberto via bio do Instagram/Linktree">
+                        <Sparkles className="w-2.5 h-2.5" /> via IG
                       </span>
                     )}
                   </div>
