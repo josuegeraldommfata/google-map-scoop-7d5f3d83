@@ -178,17 +178,22 @@ export function LeadsTable({ leads }: Props) {
                   <p className="text-xs text-muted-foreground max-w-xs truncate">{lead.address}</p>
                 </td>
                 <td className="p-3">
-                  <div className="flex items-center gap-1.5 text-xs text-foreground">
+                  <div className="flex items-center gap-1.5 text-xs text-foreground flex-wrap">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                    {lead.phone || '—'}
+                    {lead.whatsapp || lead.phone || '—'}
                     {phoneKind === 'mobile' && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
                         ⭐ WhatsApp
                       </span>
                     )}
                     {phoneKind === 'landline' && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
                         📞 Fixo
+                      </span>
+                    )}
+                    {lead.phoneFromInstagram && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/15 text-pink-400" title="Telefone descoberto via bio do Instagram/Linktree">
+                        <Sparkles className="w-2.5 h-2.5" /> via IG
                       </span>
                     )}
                   </div>
