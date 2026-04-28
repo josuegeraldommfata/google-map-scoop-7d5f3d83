@@ -21,7 +21,7 @@ const PAGE_SIZE = 10;
 
 export function LeadsTable({ leads }: Props) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium'>('all');
+  const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium' | 'tubarao'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews'>('rating');
   const [onlyMobile, setOnlyMobile] = useState(false);
   const [page, setPage] = useState(1);
