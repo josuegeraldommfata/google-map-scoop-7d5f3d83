@@ -280,8 +280,14 @@ export function LeadsTable({ leads }: Props) {
                         href={getWhatsAppLink(lead.whatsapp, buildPitchMessage(lead))}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-1.5 rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors"
-                        title="Abrir WhatsApp com mensagem persuasiva pronta"
+                        className={`p-1.5 rounded-md transition-colors ${
+                          lead.whatsappVerified
+                            ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 ring-1 ring-emerald-500/40'
+                            : 'bg-success/10 text-success hover:bg-success/20'
+                        }`}
+                        title={lead.whatsappVerified
+                          ? `WhatsApp confirmado ativo (score ${lead.whatsappScore}/100) — abrir conversa`
+                          : `WhatsApp não verificado (score ${lead.whatsappScore ?? 0}/100) — pode ser que o número não exista no WhatsApp`}
                       >
                         <MessageCircle className="w-4 h-4" />
                       </a>
