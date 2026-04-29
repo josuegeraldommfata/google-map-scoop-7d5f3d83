@@ -96,30 +96,110 @@ export function generateLeads(query: SearchQuery): Lead[] {
   return leads;
 }
 
-export function buildPitchMessage(lead: { name: string; niche: string; city: string; website: string | null }): string {
-  const first = lead.name.split(/\s|-/)[0];
+const PORTFOLIO_URL = 'https://www.robsonalexdev.com.br/';
+
+const NICHE_HOOKS: Record<string, { pain: string; benefit: string }> = {
+  dentista: {
+    pain: 'agendamentos perdidos por não responder rápido no WhatsApp e site que não converte visita em consulta',
+    benefit: 'um site moderno com agendamento online, integração com WhatsApp e otimizado pra aparecer no Google quando alguém busca "dentista em ' ,
+  },
+  restaurante: {
+    pain: 'cardápio difícil de achar, sem pedido online e site lento que espanta cliente com fome',
+    benefit: 'um site rápido com cardápio digital, pedido online via WhatsApp e fotos que dão água na boca',
+  },
+  'clínica médica': {
+    pain: 'pacientes ligando fora do horário e secretária sobrecarregada com agendamento manual',
+    benefit: 'um site com agendamento 24h, prontuário básico e integração com WhatsApp pra reduzir no-show',
+  },
+  academia: {
+    pain: 'matrícula 100% presencial e site sem captação de leads pra aulas experimentais',
+    benefit: 'um site com matrícula online, agendamento de aula experimental e captação automática de leads',
+  },
+  'salão de beleza': {
+    pain: 'agenda bagunçada no caderno e cliente sumindo porque ninguém respondeu o WhatsApp na hora',
+    benefit: 'um site com agendamento online, lembrete automático e galeria pra mostrar seus trabalhos',
+  },
+  imobiliária: {
+    pain: 'imóveis sem destaque no Google e leads frios chegando sem qualificação',
+    benefit: 'um site com vitrine de imóveis, busca avançada e captação qualificada via WhatsApp',
+  },
+  contabilidade: {
+    pain: 'site institucional parado que não gera lead nenhum e concorrente aparecendo na frente no Google',
+    benefit: 'um site profissional com captação de leads, calculadoras (Simples/MEI) e blog otimizado',
+  },
+  'pet shop': {
+    pain: 'cliente comprando ração pelo iFood/Mercado Livre porque vocês não vendem online',
+    benefit: 'um site com loja online, agendamento de banho e tosa e fidelização via WhatsApp',
+  },
+  mecânica: {
+    pain: 'cliente não acha vocês no Google e orçamento perdido por demorar a responder',
+    benefit: 'um site otimizado pra "mecânica em ' ,
+  },
+};
+
+function buildAdvocatusPitch(lead: { name: string; city: string; website: string | null }): string {
+  return [
+    `Olá! Tudo bem? 👋`,
+    ``,
+    `Aqui é da *equipe Advocatus* — somos um SaaS de advocacia com *agente multiatendimento* que responde *24h por dia* todos os clientes que chegam no WhatsApp do escritório.`,
+    ``,
+    `Vi a ${lead.name} aqui em ${lead.city} e fiquei pensando o quanto vocês estão perdendo de cliente fora do horário comercial — sexta à noite, fim de semana, feriado... ⏰`,
+    ``,
+    `O nosso agente:`,
+    `✅ Atende *todos os contatos* no WhatsApp em segundos, 24/7`,
+    `✅ Faz a *triagem da causa* e qualifica o cliente`,
+    `✅ Entrega pra você um *resumo pronto* com o número do processo (quando houver) e o assunto resumido`,
+    `✅ Agenda reunião direto na sua agenda`,
+    ``,
+    `Resultado: o advogado só fala com cliente *já qualificado e pronto pra fechar*. Zero lead perdido. 🚀`,
+    ``,
+    `Posso te mandar uma demonstração de 2 minutos mostrando o agente atendendo um caso real? Se fizer sentido a gente avança, se não fizer, fica o presente. 😉`,
+  ].join('\n');
+}
+
+function buildDevPitch(lead: { name: string; niche: string; city: string; website: string | null }): string {
+  const key = lead.niche.toLowerCase();
+  const hook = NICHE_HOOKS[key];
+  const pain = hook ? hook.pain : `site fraco (ou inexistente) fazendo cliente cair direto na mão do concorrente no Google`;
+  const benefit = hook
+    ? (hook.benefit.endsWith('em ') ? `${hook.benefit}${lead.city}"` : hook.benefit)
+    : `um site profissional, rápido, otimizado pra Google e que transforma visita em cliente`;
+
   if (!lead.website) {
-    // LEAD QUENTE — não tem site
     return [
       `Olá! Tudo bem? 👋`,
       ``,
-      `Aqui é da equipe Leads Hunter. Estava pesquisando os melhores ${lead.niche}s de ${lead.city} e a ${lead.name} apareceu com ótima reputação — mas notei uma coisa que pode estar custando clientes pra vocês: *vocês ainda não têm um site*.`,
+      `Meu nome é Robson, sou *programador* e estava pesquisando os melhores ${lead.niche}s de ${lead.city} — a ${lead.name} apareceu com ótima reputação, mas notei uma coisa séria: *vocês ainda não têm um site*. 😬`,
       ``,
-      `Hoje, mais de 80% das pessoas pesquisam no Google antes de fechar com qualquer ${lead.niche}. Sem um site, quem está procurando agora mesmo provavelmente está caindo direto na mão do seu concorrente. 😬`,
+      `Hoje mais de 80% das pessoas pesquisam no Google antes de fechar com qualquer ${lead.niche}. O problema clássico que vejo é: ${pain}.`,
       ``,
-      `Tenho uma proposta rápida pra te mostrar: um site profissional, otimizado pra aparecer no Google e converter visitantes em clientes — entregue em poucos dias e com investimento que cabe no bolso.`,
+      `Eu crio pra vocês ${benefit} — entregue em poucos dias e com investimento que cabe no bolso.`,
       ``,
-      `Posso te mandar 2 ou 3 exemplos de sites que fizemos pra ${lead.niche}s e que já estão trazendo agendamentos todo dia? Leva 30 segundos pra você dar uma olhada. 🚀`,
+      `Dá uma olhada rapidinho no meu portfólio: ${PORTFOLIO_URL}`,
+      ``,
+      `Posso te passar 2 ou 3 ideias específicas pra ${lead.name}? Leva 30 segundos. 🚀`,
     ].join('\n');
   }
-  // LEAD FRIO — tem site
+
   return [
     `Olá, tudo bem? 👋`,
     ``,
-    `Vi a ${lead.name} aqui em ${lead.city} e dei uma olhada rápida no site de vocês. Tenho algumas observações pontuais que poderiam *aumentar bastante o número de clientes chegando pelo Google* — sem precisar gastar mais com anúncios.`,
+    `Meu nome é Robson, sou *programador*. Vi a ${lead.name} aqui em ${lead.city} e dei uma olhada no site de vocês — tenho observações pontuais que podem *aumentar bastante o número de clientes chegando pelo Google*, sem precisar gastar mais em anúncio.`,
     ``,
-    `Posso te mandar uma análise gratuita de 2 minutos com o que ajustaria primeiro? Se fizer sentido a gente conversa, se não fizer, fica o presente. 😉`,
+    `Trabalho exatamente com isso: criar/refazer sites pra ${lead.niche}s resolvendo ${pain}.`,
+    ``,
+    `Meu portfólio: ${PORTFOLIO_URL}`,
+    ``,
+    `Posso te mandar uma análise gratuita de 2 minutos com o que eu ajustaria primeiro? Se fizer sentido a gente conversa, se não fizer, fica o presente. 😉`,
   ].join('\n');
+}
+
+export function buildPitchMessage(lead: { name: string; niche: string; city: string; website: string | null }): string {
+  const niche = lead.niche.toLowerCase();
+  if (niche.includes('advog') || niche.includes('jurídic') || niche.includes('juridic')) {
+    return buildAdvocatusPitch(lead);
+  }
+  return buildDevPitch(lead);
 }
 
 export function getWhatsAppLink(phone: string, message?: string): string {
