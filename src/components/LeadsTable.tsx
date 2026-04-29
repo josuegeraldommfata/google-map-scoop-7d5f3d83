@@ -22,8 +22,9 @@ const PAGE_SIZE = 10;
 export function LeadsTable({ leads }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium' | 'tubarao'>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews'>('rating');
+  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews' | 'whatsapp'>('whatsapp');
   const [onlyMobile, setOnlyMobile] = useState(false);
+  const [onlyVerified, setOnlyVerified] = useState(false);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -40,6 +41,9 @@ export function LeadsTable({ leads }: Props) {
     if (onlyMobile) {
       result = result.filter(l => classifyPhone(l.whatsapp || l.phone) === 'mobile');
     }
+    if (onlyVerified) {
+      result = result.filter(l => l.whatsappVerified === true);
+    }
 
     if (search) {
       const s = search.toLowerCase();
@@ -52,10 +56,11 @@ export function LeadsTable({ leads }: Props) {
     result = [...result].sort((a, b) => {
       if (sortBy === 'rating') return b.rating - a.rating;
       if (sortBy === 'reviews') return b.reviewCount - a.reviewCount;
+      if (sortBy === 'whatsapp') return (b.whatsappScore ?? 0) - (a.whatsappScore ?? 0);
       return a.name.localeCompare(b.name);
     });
     return result;
-  }, [leads, filter, onlyMobile, search, sortBy]);
+  }, [leads, filter, onlyMobile, onlyVerified, search, sortBy]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
