@@ -7,7 +7,7 @@ import {
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram,
-  Crown, Smartphone, PhoneOff, Megaphone, Sparkles,
+  Crown, Smartphone, PhoneOff, Megaphone, Sparkles, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +22,9 @@ const PAGE_SIZE = 10;
 export function LeadsTable({ leads }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<'all' | 'hot' | 'cold' | 'premium' | 'tubarao'>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews'>('rating');
+  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'reviews' | 'whatsapp'>('whatsapp');
   const [onlyMobile, setOnlyMobile] = useState(false);
+  const [onlyVerified, setOnlyVerified] = useState(false);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -40,6 +41,9 @@ export function LeadsTable({ leads }: Props) {
     if (onlyMobile) {
       result = result.filter(l => classifyPhone(l.whatsapp || l.phone) === 'mobile');
     }
+    if (onlyVerified) {
+      result = result.filter(l => l.whatsappVerified === true);
+    }
 
     if (search) {
       const s = search.toLowerCase();
@@ -52,10 +56,11 @@ export function LeadsTable({ leads }: Props) {
     result = [...result].sort((a, b) => {
       if (sortBy === 'rating') return b.rating - a.rating;
       if (sortBy === 'reviews') return b.reviewCount - a.reviewCount;
+      if (sortBy === 'whatsapp') return (b.whatsappScore ?? 0) - (a.whatsappScore ?? 0);
       return a.name.localeCompare(b.name);
     });
     return result;
-  }, [leads, filter, onlyMobile, search, sortBy]);
+  }, [leads, filter, onlyMobile, onlyVerified, search, sortBy]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -117,6 +122,19 @@ export function LeadsTable({ leads }: Props) {
             <Smartphone className="w-3.5 h-3.5" />
             Apenas Celulares
           </button>
+
+          <button
+            onClick={() => { setOnlyVerified(v => !v); setPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              onlyVerified
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
+                : 'bg-muted text-muted-foreground border-border hover:text-foreground'
+            }`}
+            title="Mostra só números cujo WhatsApp foi confirmado ativo via wa.me"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            WhatsApp Verificado
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -125,6 +143,7 @@ export function LeadsTable({ leads }: Props) {
             onChange={e => setSortBy(e.target.value as any)}
             className="h-9 rounded-md border border-border bg-muted px-2 text-xs text-foreground"
           >
+            <option value="whatsapp">Ordenar: WhatsApp Score</option>
             <option value="rating">Ordenar: Avaliação</option>
             <option value="reviews">Ordenar: Avaliações</option>
             <option value="name">Ordenar: Nome</option>
@@ -183,7 +202,7 @@ export function LeadsTable({ leads }: Props) {
                     {lead.whatsapp || lead.phone || '—'}
                     {phoneKind === 'mobile' && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
-                        ⭐ WhatsApp
+                        ⭐ Celular
                       </span>
                     )}
                     {phoneKind === 'landline' && (
@@ -191,6 +210,21 @@ export function LeadsTable({ leads }: Props) {
                         📞 Fixo
                       </span>
                     )}
+                    {lead.whatsappVerified ? (
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                        title={`WhatsApp confirmado ativo • Score ${lead.whatsappScore ?? 0}/100`}
+                      >
+                        <ShieldCheck className="w-2.5 h-2.5" /> Verificado
+                      </span>
+                    ) : phoneKind === 'mobile' ? (
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/30"
+                        title={`WhatsApp não confirmado • Score ${lead.whatsappScore ?? 0}/100`}
+                      >
+                        <ShieldAlert className="w-2.5 h-2.5" /> Sem confirmar
+                      </span>
+                    ) : null}
                     {lead.phoneFromInstagram && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/15 text-pink-400" title="Telefone descoberto via bio do Instagram/Linktree">
                         <Sparkles className="w-2.5 h-2.5" /> via IG
@@ -246,8 +280,14 @@ export function LeadsTable({ leads }: Props) {
                         href={getWhatsAppLink(lead.whatsapp, buildPitchMessage(lead))}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-1.5 rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors"
-                        title="Abrir WhatsApp com mensagem persuasiva pronta"
+                        className={`p-1.5 rounded-md transition-colors ${
+                          lead.whatsappVerified
+                            ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 ring-1 ring-emerald-500/40'
+                            : 'bg-success/10 text-success hover:bg-success/20'
+                        }`}
+                        title={lead.whatsappVerified
+                          ? `WhatsApp confirmado ativo (score ${lead.whatsappScore}/100) — abrir conversa`
+                          : `WhatsApp não verificado (score ${lead.whatsappScore ?? 0}/100) — pode ser que o número não exista no WhatsApp`}
                       >
                         <MessageCircle className="w-4 h-4" />
                       </a>
