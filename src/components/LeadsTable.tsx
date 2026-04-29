@@ -202,7 +202,7 @@ export function LeadsTable({ leads }: Props) {
                     {lead.whatsapp || lead.phone || '—'}
                     {phoneKind === 'mobile' && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">
-                        ⭐ WhatsApp
+                        ⭐ Celular
                       </span>
                     )}
                     {phoneKind === 'landline' && (
@@ -210,6 +210,21 @@ export function LeadsTable({ leads }: Props) {
                         📞 Fixo
                       </span>
                     )}
+                    {lead.whatsappVerified ? (
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                        title={`WhatsApp confirmado ativo • Score ${lead.whatsappScore ?? 0}/100`}
+                      >
+                        <ShieldCheck className="w-2.5 h-2.5" /> Verificado
+                      </span>
+                    ) : phoneKind === 'mobile' ? (
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/30"
+                        title={`WhatsApp não confirmado • Score ${lead.whatsappScore ?? 0}/100`}
+                      >
+                        <ShieldAlert className="w-2.5 h-2.5" /> Sem confirmar
+                      </span>
+                    ) : null}
                     {lead.phoneFromInstagram && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/15 text-pink-400" title="Telefone descoberto via bio do Instagram/Linktree">
                         <Sparkles className="w-2.5 h-2.5" /> via IG
