@@ -7,7 +7,7 @@ import {
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram,
-  Crown, Smartphone, PhoneOff, Megaphone, Sparkles,
+  Crown, Smartphone, PhoneOff, Megaphone, Sparkles, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
