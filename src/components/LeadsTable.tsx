@@ -122,6 +122,19 @@ export function LeadsTable({ leads }: Props) {
             <Smartphone className="w-3.5 h-3.5" />
             Apenas Celulares
           </button>
+
+          <button
+            onClick={() => { setOnlyVerified(v => !v); setPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              onlyVerified
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
+                : 'bg-muted text-muted-foreground border-border hover:text-foreground'
+            }`}
+            title="Mostra só números cujo WhatsApp foi confirmado ativo via wa.me"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            WhatsApp Verificado
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -130,6 +143,7 @@ export function LeadsTable({ leads }: Props) {
             onChange={e => setSortBy(e.target.value as any)}
             className="h-9 rounded-md border border-border bg-muted px-2 text-xs text-foreground"
           >
+            <option value="whatsapp">Ordenar: WhatsApp Score</option>
             <option value="rating">Ordenar: Avaliação</option>
             <option value="reviews">Ordenar: Avaliações</option>
             <option value="name">Ordenar: Nome</option>
