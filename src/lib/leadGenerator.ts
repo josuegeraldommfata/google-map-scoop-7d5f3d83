@@ -209,8 +209,9 @@ export function getWhatsAppLink(phone: string, message?: string): string {
   clean = clean.replace(/^0+/, '');
   const number = clean.startsWith('55') ? clean : `55${clean}`;
   const msg = message || `Olá! Tudo bem? Encontrei sua empresa e gostaria de apresentar uma oportunidade. Podemos conversar?`;
-  // Formato: https://wa.me/55DDDNUMERO?text=URLencodedTEXT
-  return `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
+  // web.whatsapp.com evita o redirecionamento do wa.me/api.whatsapp.com,
+  // que alguns navegadores/redes bloqueiam com ERR_BLOCKED_BY_RESPONSE.
+  return `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}`;
 }
 
 export function leadsToCSV(leads: Lead[]): string {
