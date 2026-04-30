@@ -115,16 +115,46 @@ async function geocodeCity(city: string, state: string): Promise<{ bbox: [number
   return { bbox: [bb[0], bb[2], bb[1], bb[3]] };
 }
 
-async function overpassQuery(filter: string, niche: string, bbox: [number, number, number, number], limit: number) {
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function overpassQuery(
+  filters: string[],
+  niche: string,
+  keywords: string[],
+  bbox: [number, number, number, number],
+  limit: number,
+) {
   const [s, w, n, e] = bbox;
-  let body: string;
-  if (filter) {
+  const parts: string[] = [];
+
+  // 1) filtros tag=valor conhecidos
+  for (const filter of filters) {
     const [k, v] = filter.split('=');
     const valQ = v === '*' ? '' : `="${v}"`;
-    body = `[out:json][timeout:15];(node["${k}"${valQ}](${s},${w},${n},${e});way["${k}"${valQ}](${s},${w},${n},${e}););out tags center ${limit};`;
-  } else {
-    body = `[out:json][timeout:15];(node["name"~"${niche}",i](${s},${w},${n},${e});way["name"~"${niche}",i](${s},${w},${n},${e}););out tags center ${limit};`;
+    parts.push(`node["${k}"${valQ}](${s},${w},${n},${e});`);
+    parts.push(`way["${k}"${valQ}](${s},${w},${n},${e});`);
   }
+
+  // 2) fallback por regex em name — cobre nichos não mapeados (ex: "ar condicionado", "placa solar")
+  const terms = [niche, ...keywords].filter(Boolean).map(t => t.trim()).filter(Boolean);
+  if (terms.length) {
+    const regex = terms.map(escapeRegex).join('|');
+    // Busca em categorias onde prestadores costumam estar cadastrados
+    const categories = ['shop', 'craft', 'office', 'amenity', 'trade', 'industrial'];
+    for (const cat of categories) {
+      parts.push(`node["${cat}"]["name"~"${regex}",i](${s},${w},${n},${e});`);
+      parts.push(`way["${cat}"]["name"~"${regex}",i](${s},${w},${n},${e});`);
+    }
+    // Busca também por name puro (qualquer POI nomeado)
+    parts.push(`node["name"~"${regex}",i](${s},${w},${n},${e});`);
+    parts.push(`way["name"~"${regex}",i](${s},${w},${n},${e});`);
+  }
+
+  if (!parts.length) return [];
+
+  const body = `[out:json][timeout:25];(${parts.join('')});out tags center ${limit};`;
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
