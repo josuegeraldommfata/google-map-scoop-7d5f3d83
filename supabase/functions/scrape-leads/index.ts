@@ -47,35 +47,61 @@ interface Lead {
 
 // ===================== OSM helpers =====================
 
-function nicheToOsmFilter(niche: string): string {
+/** Retorna lista de filtros OSM (tag=valor) prováveis para o nicho. Pode ser vazia. */
+function nicheToOsmFilters(niche: string): string[] {
   const n = niche.toLowerCase();
-  const map: Record<string, string> = {
-    'advogado': 'office=lawyer', 'advocacia': 'office=lawyer', 'advogados': 'office=lawyer',
-    'restaurante': 'amenity=restaurant', 'restaurantes': 'amenity=restaurant',
-    'pizzaria': 'amenity=restaurant', 'lanchonete': 'amenity=fast_food',
-    'cafe': 'amenity=cafe', 'cafeteria': 'amenity=cafe', 'bar': 'amenity=bar',
-    'padaria': 'shop=bakery', 'mercado': 'shop=supermarket',
-    'farmacia': 'amenity=pharmacy', 'farmácia': 'amenity=pharmacy',
-    'dentista': 'amenity=dentist', 'medico': 'amenity=doctors',
-    'clinica': 'amenity=clinic', 'clínica': 'amenity=clinic',
-    'hospital': 'amenity=hospital',
-    'hotel': 'tourism=hotel', 'pousada': 'tourism=guest_house',
-    'academia': 'leisure=fitness_centre',
-    'salao': 'shop=hairdresser', 'salão': 'shop=hairdresser', 'barbearia': 'shop=hairdresser',
-    'estetica': 'shop=beauty', 'estética': 'shop=beauty',
-    'pet': 'shop=pet', 'petshop': 'shop=pet',
-    'oficina': 'shop=car_repair', 'mecanica': 'shop=car_repair', 'mecânica': 'shop=car_repair',
-    'imobiliaria': 'office=estate_agent', 'imobiliária': 'office=estate_agent',
-    'contador': 'office=accountant', 'contabilidade': 'office=accountant',
-    'arquiteto': 'office=architect', 'engenheiro': 'office=engineer',
-    'loja': 'shop=*', 'escola': 'amenity=school',
-    'igreja': 'amenity=place_of_worship', 'banco': 'amenity=bank',
-    'posto': 'amenity=fuel',
+  const map: Record<string, string[]> = {
+    'advogado': ['office=lawyer'], 'advocacia': ['office=lawyer'], 'advogados': ['office=lawyer'],
+    'restaurante': ['amenity=restaurant'], 'restaurantes': ['amenity=restaurant'],
+    'pizzaria': ['amenity=restaurant'], 'lanchonete': ['amenity=fast_food'],
+    'cafe': ['amenity=cafe'], 'cafeteria': ['amenity=cafe'], 'bar': ['amenity=bar'],
+    'padaria': ['shop=bakery'], 'mercado': ['shop=supermarket'],
+    'farmacia': ['amenity=pharmacy'], 'farmácia': ['amenity=pharmacy'],
+    'dentista': ['amenity=dentist'], 'medico': ['amenity=doctors'],
+    'clinica': ['amenity=clinic'], 'clínica': ['amenity=clinic'],
+    'hospital': ['amenity=hospital'],
+    'hotel': ['tourism=hotel'], 'pousada': ['tourism=guest_house'],
+    'academia': ['leisure=fitness_centre'],
+    'salao': ['shop=hairdresser'], 'salão': ['shop=hairdresser'], 'barbearia': ['shop=hairdresser'],
+    'estetica': ['shop=beauty'], 'estética': ['shop=beauty'],
+    'pet': ['shop=pet'], 'petshop': ['shop=pet'],
+    'oficina': ['shop=car_repair'], 'mecanica': ['shop=car_repair'], 'mecânica': ['shop=car_repair'],
+    'imobiliaria': ['office=estate_agent'], 'imobiliária': ['office=estate_agent'],
+    'contador': ['office=accountant'], 'contabilidade': ['office=accountant'],
+    'arquiteto': ['office=architect'], 'engenheiro': ['office=engineer'],
+    'escola': ['amenity=school'],
+    'igreja': ['amenity=place_of_worship'], 'banco': ['amenity=bank'],
+    'posto': ['amenity=fuel'],
+    // prestadores de serviço / técnicos — OSM usa craft=* e shop=*
+    'ar condicionado': ['craft=hvac', 'shop=appliance', 'craft=electrician'],
+    'climatizacao': ['craft=hvac'], 'climatização': ['craft=hvac'], 'refrigeracao': ['craft=hvac'], 'refrigeração': ['craft=hvac'],
+    'placa solar': ['craft=photovoltaic', 'craft=electrician'],
+    'energia solar': ['craft=photovoltaic', 'craft=electrician'],
+    'solar': ['craft=photovoltaic'],
+    'eletricista': ['craft=electrician'],
+    'encanador': ['craft=plumber'], 'hidraulica': ['craft=plumber'], 'hidráulica': ['craft=plumber'],
+    'pedreiro': ['craft=builder'], 'construcao': ['craft=builder'], 'construção': ['craft=builder'],
+    'pintor': ['craft=painter'], 'pintura': ['craft=painter'],
+    'marceneiro': ['craft=carpenter'], 'marcenaria': ['craft=carpenter'],
+    'serralheria': ['craft=metal_construction'], 'serralheiro': ['craft=metal_construction'],
+    'vidraceiro': ['craft=glaziery'], 'vidracaria': ['craft=glaziery'],
+    'jardineiro': ['craft=gardener'], 'paisagismo': ['craft=gardener'],
+    'dedetizadora': ['craft=pest_control'], 'dedetizacao': ['craft=pest_control'], 'dedetização': ['craft=pest_control'],
+    'chaveiro': ['craft=key_cutter', 'shop=locksmith'],
+    'tapeceiro': ['craft=upholsterer'],
+    'informatica': ['shop=computer'], 'informática': ['shop=computer'],
+    'assistencia tecnica': ['shop=electronics', 'shop=mobile_phone'],
+    'celular': ['shop=mobile_phone'],
+    'borracharia': ['shop=tyres'], 'pneus': ['shop=tyres'],
+    'auto eletrica': ['shop=car_repair'], 'funilaria': ['shop=car_repair'],
+    'lavanderia': ['shop=laundry'],
+    'otica': ['shop=optician'], 'ótica': ['shop=optician'],
+    'loja': ['shop=*'],
   };
   for (const [key, val] of Object.entries(map)) {
     if (n.includes(key)) return val;
   }
-  return '';
+  return [];
 }
 
 async function geocodeCity(city: string, state: string): Promise<{ bbox: [number, number, number, number] } | null> {
@@ -89,16 +115,46 @@ async function geocodeCity(city: string, state: string): Promise<{ bbox: [number
   return { bbox: [bb[0], bb[2], bb[1], bb[3]] };
 }
 
-async function overpassQuery(filter: string, niche: string, bbox: [number, number, number, number], limit: number) {
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function overpassQuery(
+  filters: string[],
+  niche: string,
+  keywords: string[],
+  bbox: [number, number, number, number],
+  limit: number,
+) {
   const [s, w, n, e] = bbox;
-  let body: string;
-  if (filter) {
+  const parts: string[] = [];
+
+  // 1) filtros tag=valor conhecidos
+  for (const filter of filters) {
     const [k, v] = filter.split('=');
     const valQ = v === '*' ? '' : `="${v}"`;
-    body = `[out:json][timeout:15];(node["${k}"${valQ}](${s},${w},${n},${e});way["${k}"${valQ}](${s},${w},${n},${e}););out tags center ${limit};`;
-  } else {
-    body = `[out:json][timeout:15];(node["name"~"${niche}",i](${s},${w},${n},${e});way["name"~"${niche}",i](${s},${w},${n},${e}););out tags center ${limit};`;
+    parts.push(`node["${k}"${valQ}](${s},${w},${n},${e});`);
+    parts.push(`way["${k}"${valQ}](${s},${w},${n},${e});`);
   }
+
+  // 2) fallback por regex em name — cobre nichos não mapeados (ex: "ar condicionado", "placa solar")
+  const terms = [niche, ...keywords].filter(Boolean).map(t => t.trim()).filter(Boolean);
+  if (terms.length) {
+    const regex = terms.map(escapeRegex).join('|');
+    // Busca em categorias onde prestadores costumam estar cadastrados
+    const categories = ['shop', 'craft', 'office', 'amenity', 'trade', 'industrial'];
+    for (const cat of categories) {
+      parts.push(`node["${cat}"]["name"~"${regex}",i](${s},${w},${n},${e});`);
+      parts.push(`way["${cat}"]["name"~"${regex}",i](${s},${w},${n},${e});`);
+    }
+    // Busca também por name puro (qualquer POI nomeado)
+    parts.push(`node["name"~"${regex}",i](${s},${w},${n},${e});`);
+    parts.push(`way["name"~"${regex}",i](${s},${w},${n},${e});`);
+  }
+
+  if (!parts.length) return [];
+
+  const body = `[out:json][timeout:25];(${parts.join('')});out tags center ${limit};`;
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
@@ -412,19 +468,27 @@ Deno.serve(async (req) => {
     const query = (await req.json()) as SearchQuery;
     const total = Math.max(1, Math.min(500, query.quantity || 20));
     const perCity = Math.ceil(total / Math.max(1, query.cities.length));
-    const filter = nicheToOsmFilter(query.niche);
-    console.log('[leads] niche=', query.niche, 'filter=', filter, 'cities=', query.cities);
+    const filters = nicheToOsmFilters(query.niche);
+    console.log('[leads] niche=', query.niche, 'filters=', filters, 'keywords=', query.keywords, 'cities=', query.cities);
 
     const allLeads: Lead[] = [];
     const seenPhones = new Set<string>(); // dedup global por telefone
+    const seenIds = new Set<string>(); // dedup por id OSM (regex pode duplicar entre categorias)
 
     for (const city of query.cities) {
       const geo = await geocodeCity(city.trim(), query.state);
       if (!geo) { console.log('[leads] cidade nao encontrada:', city); continue; }
-      const elements = await overpassQuery(filter, query.niche, geo.bbox, perCity * 2);
+      const elements = await overpassQuery(filters, query.niche, query.keywords || [], geo.bbox, perCity * 3);
       console.log(`[leads] ${city}: ${elements.length} elementos OSM`);
 
-      const candidates = elements.filter((el: any) => el.tags?.name).slice(0, perCity);
+      const unique = elements.filter((el: any) => {
+        if (!el.tags?.name) return false;
+        const k = `${el.type}-${el.id}`;
+        if (seenIds.has(k)) return false;
+        seenIds.add(k);
+        return true;
+      });
+      const candidates = unique.slice(0, perCity);
 
       const enriched = await Promise.all(candidates.map(async (el: any) => {
         const tags = el.tags;
