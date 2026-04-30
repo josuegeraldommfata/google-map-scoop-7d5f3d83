@@ -47,35 +47,61 @@ interface Lead {
 
 // ===================== OSM helpers =====================
 
-function nicheToOsmFilter(niche: string): string {
+/** Retorna lista de filtros OSM (tag=valor) prováveis para o nicho. Pode ser vazia. */
+function nicheToOsmFilters(niche: string): string[] {
   const n = niche.toLowerCase();
-  const map: Record<string, string> = {
-    'advogado': 'office=lawyer', 'advocacia': 'office=lawyer', 'advogados': 'office=lawyer',
-    'restaurante': 'amenity=restaurant', 'restaurantes': 'amenity=restaurant',
-    'pizzaria': 'amenity=restaurant', 'lanchonete': 'amenity=fast_food',
-    'cafe': 'amenity=cafe', 'cafeteria': 'amenity=cafe', 'bar': 'amenity=bar',
-    'padaria': 'shop=bakery', 'mercado': 'shop=supermarket',
-    'farmacia': 'amenity=pharmacy', 'farmácia': 'amenity=pharmacy',
-    'dentista': 'amenity=dentist', 'medico': 'amenity=doctors',
-    'clinica': 'amenity=clinic', 'clínica': 'amenity=clinic',
-    'hospital': 'amenity=hospital',
-    'hotel': 'tourism=hotel', 'pousada': 'tourism=guest_house',
-    'academia': 'leisure=fitness_centre',
-    'salao': 'shop=hairdresser', 'salão': 'shop=hairdresser', 'barbearia': 'shop=hairdresser',
-    'estetica': 'shop=beauty', 'estética': 'shop=beauty',
-    'pet': 'shop=pet', 'petshop': 'shop=pet',
-    'oficina': 'shop=car_repair', 'mecanica': 'shop=car_repair', 'mecânica': 'shop=car_repair',
-    'imobiliaria': 'office=estate_agent', 'imobiliária': 'office=estate_agent',
-    'contador': 'office=accountant', 'contabilidade': 'office=accountant',
-    'arquiteto': 'office=architect', 'engenheiro': 'office=engineer',
-    'loja': 'shop=*', 'escola': 'amenity=school',
-    'igreja': 'amenity=place_of_worship', 'banco': 'amenity=bank',
-    'posto': 'amenity=fuel',
+  const map: Record<string, string[]> = {
+    'advogado': ['office=lawyer'], 'advocacia': ['office=lawyer'], 'advogados': ['office=lawyer'],
+    'restaurante': ['amenity=restaurant'], 'restaurantes': ['amenity=restaurant'],
+    'pizzaria': ['amenity=restaurant'], 'lanchonete': ['amenity=fast_food'],
+    'cafe': ['amenity=cafe'], 'cafeteria': ['amenity=cafe'], 'bar': ['amenity=bar'],
+    'padaria': ['shop=bakery'], 'mercado': ['shop=supermarket'],
+    'farmacia': ['amenity=pharmacy'], 'farmácia': ['amenity=pharmacy'],
+    'dentista': ['amenity=dentist'], 'medico': ['amenity=doctors'],
+    'clinica': ['amenity=clinic'], 'clínica': ['amenity=clinic'],
+    'hospital': ['amenity=hospital'],
+    'hotel': ['tourism=hotel'], 'pousada': ['tourism=guest_house'],
+    'academia': ['leisure=fitness_centre'],
+    'salao': ['shop=hairdresser'], 'salão': ['shop=hairdresser'], 'barbearia': ['shop=hairdresser'],
+    'estetica': ['shop=beauty'], 'estética': ['shop=beauty'],
+    'pet': ['shop=pet'], 'petshop': ['shop=pet'],
+    'oficina': ['shop=car_repair'], 'mecanica': ['shop=car_repair'], 'mecânica': ['shop=car_repair'],
+    'imobiliaria': ['office=estate_agent'], 'imobiliária': ['office=estate_agent'],
+    'contador': ['office=accountant'], 'contabilidade': ['office=accountant'],
+    'arquiteto': ['office=architect'], 'engenheiro': ['office=engineer'],
+    'escola': ['amenity=school'],
+    'igreja': ['amenity=place_of_worship'], 'banco': ['amenity=bank'],
+    'posto': ['amenity=fuel'],
+    // prestadores de serviço / técnicos — OSM usa craft=* e shop=*
+    'ar condicionado': ['craft=hvac', 'shop=appliance', 'craft=electrician'],
+    'climatizacao': ['craft=hvac'], 'climatização': ['craft=hvac'], 'refrigeracao': ['craft=hvac'], 'refrigeração': ['craft=hvac'],
+    'placa solar': ['craft=photovoltaic', 'craft=electrician'],
+    'energia solar': ['craft=photovoltaic', 'craft=electrician'],
+    'solar': ['craft=photovoltaic'],
+    'eletricista': ['craft=electrician'],
+    'encanador': ['craft=plumber'], 'hidraulica': ['craft=plumber'], 'hidráulica': ['craft=plumber'],
+    'pedreiro': ['craft=builder'], 'construcao': ['craft=builder'], 'construção': ['craft=builder'],
+    'pintor': ['craft=painter'], 'pintura': ['craft=painter'],
+    'marceneiro': ['craft=carpenter'], 'marcenaria': ['craft=carpenter'],
+    'serralheria': ['craft=metal_construction'], 'serralheiro': ['craft=metal_construction'],
+    'vidraceiro': ['craft=glaziery'], 'vidracaria': ['craft=glaziery'],
+    'jardineiro': ['craft=gardener'], 'paisagismo': ['craft=gardener'],
+    'dedetizadora': ['craft=pest_control'], 'dedetizacao': ['craft=pest_control'], 'dedetização': ['craft=pest_control'],
+    'chaveiro': ['craft=key_cutter', 'shop=locksmith'],
+    'tapeceiro': ['craft=upholsterer'],
+    'informatica': ['shop=computer'], 'informática': ['shop=computer'],
+    'assistencia tecnica': ['shop=electronics', 'shop=mobile_phone'],
+    'celular': ['shop=mobile_phone'],
+    'borracharia': ['shop=tyres'], 'pneus': ['shop=tyres'],
+    'auto eletrica': ['shop=car_repair'], 'funilaria': ['shop=car_repair'],
+    'lavanderia': ['shop=laundry'],
+    'otica': ['shop=optician'], 'ótica': ['shop=optician'],
+    'loja': ['shop=*'],
   };
   for (const [key, val] of Object.entries(map)) {
     if (n.includes(key)) return val;
   }
-  return '';
+  return [];
 }
 
 async function geocodeCity(city: string, state: string): Promise<{ bbox: [number, number, number, number] } | null> {
