@@ -468,19 +468,27 @@ Deno.serve(async (req) => {
     const query = (await req.json()) as SearchQuery;
     const total = Math.max(1, Math.min(500, query.quantity || 20));
     const perCity = Math.ceil(total / Math.max(1, query.cities.length));
-    const filter = nicheToOsmFilter(query.niche);
-    console.log('[leads] niche=', query.niche, 'filter=', filter, 'cities=', query.cities);
+    const filters = nicheToOsmFilters(query.niche);
+    console.log('[leads] niche=', query.niche, 'filters=', filters, 'keywords=', query.keywords, 'cities=', query.cities);
 
     const allLeads: Lead[] = [];
     const seenPhones = new Set<string>(); // dedup global por telefone
+    const seenIds = new Set<string>(); // dedup por id OSM (regex pode duplicar entre categorias)
 
     for (const city of query.cities) {
       const geo = await geocodeCity(city.trim(), query.state);
       if (!geo) { console.log('[leads] cidade nao encontrada:', city); continue; }
-      const elements = await overpassQuery(filter, query.niche, geo.bbox, perCity * 2);
+      const elements = await overpassQuery(filters, query.niche, query.keywords || [], geo.bbox, perCity * 3);
       console.log(`[leads] ${city}: ${elements.length} elementos OSM`);
 
-      const candidates = elements.filter((el: any) => el.tags?.name).slice(0, perCity);
+      const unique = elements.filter((el: any) => {
+        if (!el.tags?.name) return false;
+        const k = `${el.type}-${el.id}`;
+        if (seenIds.has(k)) return false;
+        seenIds.add(k);
+        return true;
+      });
+      const candidates = unique.slice(0, perCity);
 
       const enriched = await Promise.all(candidates.map(async (el: any) => {
         const tags = el.tags;
