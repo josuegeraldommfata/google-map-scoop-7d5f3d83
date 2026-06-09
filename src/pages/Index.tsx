@@ -1,17 +1,31 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { SearchForm } from "@/components/SearchForm";
 import { StatsCards } from "@/components/StatsCards";
 import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
+import { MetricsView } from "@/components/MetricsView";
+import { AppSidebar } from "@/components/AppSidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
-import { Crosshair, Zap } from "lucide-react";
+import { Zap, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
+
+type View = 'search' | 'metrics' | 'history';
 
 export default function Index() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [history, setHistory] = useState<SearchHistory[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [view, setView] = useState<View>('search');
+
+  useEffect(() => {
+    loadAll().then(({ leads, history }) => {
+      setLeads(leads);
+      setHistory(history);
+    }).catch(e => console.error('load', e));
+  }, []);
 
   const hotLeads = leads.filter(l => l.type === 'hot').length;
   const coldLeads = leads.filter(l => l.type === 'cold').length;
@@ -19,9 +33,7 @@ export default function Index() {
   const handleSearch = useCallback(async (query: SearchQuery) => {
     setIsSearching(true);
     try {
-      const { data, error } = await supabase.functions.invoke('scrape-leads', {
-        body: query,
-      });
+      const { data, error } = await supabase.functions.invoke('scrape-leads', { body: query });
       if (error) throw error;
       const newLeads: Lead[] = (data?.leads || []) as Lead[];
 
@@ -32,22 +44,23 @@ export default function Index() {
       }
 
       setLeads(prev => {
-        const existingIds = new Set(prev.map(l => l.name + l.city));
-        const unique = newLeads.filter(l => !existingIds.has(l.name + l.city));
-        return [...prev, ...unique];
+        const existing = new Set(prev.map(l => (l.name + l.city).toLowerCase()));
+        const unique = newLeads.filter(l => !existing.has((l.name + l.city).toLowerCase()));
+        return [...unique, ...prev];
       });
 
       const hot = newLeads.filter(l => l.type === 'hot').length;
       const cold = newLeads.filter(l => l.type === 'cold').length;
 
-      setHistory(prev => [{
-        id: Math.random().toString(36).substring(2),
-        query,
-        leadsFound: newLeads.length,
-        hotLeads: hot,
-        coldLeads: cold,
+      const localEntry: SearchHistory = {
+        id: Math.random().toString(36).slice(2),
+        query, leadsFound: newLeads.length, hotLeads: hot, coldLeads: cold,
         executedAt: new Date().toISOString(),
-      }, ...prev]);
+      };
+      setHistory(prev => [localEntry, ...prev]);
+
+      // persiste em background
+      saveSearch(query, newLeads).catch(e => console.error('save', e));
     } catch (e) {
       console.error('Erro na busca:', e);
       toast.error('Erro ao buscar leads. Tente novamente.');
@@ -56,61 +69,103 @@ export default function Index() {
     }
   }, []);
 
+  const handleClear = async () => {
+    if (!confirm('Apagar todos os leads e histórico salvos desta sessão?')) return;
+    await clearAll();
+    setLeads([]);
+    setHistory([]);
+    toast.success('Dados limpos.');
+  };
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10 glow-primary">
-              <Crosshair className="w-6 h-6 text-primary" />
+    <SidebarProvider defaultOpen>
+      <div className="min-h-screen flex w-full bg-background">
+        <AppSidebar active={view} onChange={setView} onClear={handleClear} totalLeads={leads.length} />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="h-16 border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-40 flex items-center px-6 gap-4">
+            <SidebarTrigger />
+            <div className="flex-1">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Painel</p>
+              <h1 className="font-display text-2xl leading-none text-foreground">
+                {view === 'search' && 'Caçar Leads'}
+                {view === 'metrics' && 'Métricas'}
+                {view === 'history' && 'Histórico de Buscas'}
+              </h1>
             </div>
-            <div>
-              <h1 className="text-lg font-heading font-bold text-foreground tracking-tight">Leads Hunter</h1>
-              <p className="text-[11px] text-muted-foreground -mt-0.5">Prospecção inteligente via Google Maps</p>
+            {leads.length > 0 && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                <Zap className="w-3.5 h-3.5" />
+                <span>{leads.length} leads na sessão</span>
+              </div>
+            )}
+          </header>
+
+          <main className="flex-1 overflow-auto">
+            <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+              {view === 'search' && (
+                <>
+                  {/* Hero editorial */}
+                  <div className="relative rounded-3xl border border-border bg-card overflow-hidden shadow-soft">
+                    <div className="absolute inset-0 dot-grid opacity-40" />
+                    <div className="relative px-8 py-10 flex items-center justify-between gap-8 flex-wrap">
+                      <div className="max-w-xl">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-soft text-primary text-[11px] font-medium mb-3">
+                          <Sparkles className="w-3 h-3" /> Google Maps · WhatsApp · Instagram
+                        </div>
+                        <h2 className="font-display text-5xl text-foreground leading-[1.05]">
+                          Prospecção <em className="text-primary not-italic">cirúrgica</em>,
+                          <br /> em segundos.
+                        </h2>
+                        <p className="text-sm text-muted-foreground mt-3 max-w-md">
+                          Busque por nicho, cidade e estado. Capturamos nome, telefone, WhatsApp verificado, Instagram e site — direto da fonte.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-6 text-center">
+                        <Stat n={leads.length} label="leads" />
+                        <Stat n={hotLeads} label="quentes" tone="hot" />
+                        <Stat n={history.length} label="buscas" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <SearchForm onSearch={handleSearch} isSearching={isSearching} />
+
+                  {leads.length > 0 && (
+                    <>
+                      <StatsCards total={leads.length} hot={hotLeads} cold={coldLeads} />
+                      <LeadsTable leads={leads} />
+                    </>
+                  )}
+
+                  {leads.length === 0 && !isSearching && (
+                    <div className="text-center py-12 text-sm text-muted-foreground">
+                      Preencha o formulário acima para iniciar sua primeira caça.
+                    </div>
+                  )}
+                </>
+              )}
+
+              {view === 'metrics' && <MetricsView leads={leads} />}
+
+              {view === 'history' && (
+                <div className="rounded-2xl border border-border bg-card p-2 shadow-soft">
+                  <SearchHistoryPanel history={history} />
+                </div>
+              )}
             </div>
-          </div>
-          {leads.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Zap className="w-4 h-4 text-primary" />
-              <span className="font-medium text-foreground">{leads.length}</span> leads capturados
-            </div>
-          )}
+          </main>
         </div>
-      </header>
+      </div>
+    </SidebarProvider>
+  );
+}
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <SearchForm onSearch={handleSearch} isSearching={isSearching} />
-          </div>
-          <div>
-            <SearchHistoryPanel history={history} />
-          </div>
-        </div>
-
-        {leads.length > 0 && (
-          <>
-            <StatsCards total={leads.length} hot={hotLeads} cold={coldLeads} />
-            <LeadsTable leads={leads} />
-          </>
-        )}
-
-        {leads.length === 0 && !isSearching && (
-          <div className="text-center py-20 animate-slide-up">
-            <div className="inline-flex p-4 rounded-2xl bg-primary/5 mb-4">
-              <Crosshair className="w-12 h-12 text-primary/40" />
-            </div>
-            <h2 className="text-xl font-heading font-semibold text-foreground mb-2">
-              Pronto para caçar leads?
-            </h2>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Preencha o formulário acima com o nicho e as cidades desejadas para iniciar a busca automatizada no Google Maps.
-            </p>
-          </div>
-        )}
-      </main>
+function Stat({ n, label, tone }: { n: number; label: string; tone?: 'hot' }) {
+  return (
+    <div>
+      <p className={`font-display text-4xl leading-none ${tone === 'hot' ? 'text-hot' : 'text-foreground'}`}>{n}</p>
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">{label}</p>
     </div>
   );
 }
