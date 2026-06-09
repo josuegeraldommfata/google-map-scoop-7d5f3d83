@@ -14,7 +14,83 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      saved_leads: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          lead_key: string
+          search_id: string | null
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          data: Json
+          id?: string
+          lead_key: string
+          search_id?: string | null
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          lead_key?: string
+          search_id?: string | null
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_leads_search_id_fkey"
+            columns: ["search_id"]
+            isOneToOne: false
+            referencedRelation: "saved_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saved_searches: {
+        Row: {
+          cities: string[]
+          cold_leads: number
+          executed_at: string
+          hot_leads: number
+          id: string
+          keywords: string[]
+          leads_found: number
+          niche: string
+          quantity: number
+          session_id: string
+          state: string
+        }
+        Insert: {
+          cities?: string[]
+          cold_leads?: number
+          executed_at?: string
+          hot_leads?: number
+          id?: string
+          keywords?: string[]
+          leads_found?: number
+          niche: string
+          quantity?: number
+          session_id: string
+          state: string
+        }
+        Update: {
+          cities?: string[]
+          cold_leads?: number
+          executed_at?: string
+          hot_leads?: number
+          id?: string
+          keywords?: string[]
+          leads_found?: number
+          niche?: string
+          quantity?: number
+          session_id?: string
+          state?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
