@@ -17,16 +17,14 @@ export interface Lead {
   city: string;
   state: string;
   foundAt: string;
-  /** true se telefone foi enriquecido via bio do Instagram/Linktree */
+  category?: string;
+  placeId?: string;
+  mapsUrl?: string;
   phoneFromInstagram?: boolean;
-  /** status na biblioteca de anúncios (Meta) */
   adsStatus?: AdsStatus;
-  /** WhatsApp foi validado ativamente via wa.me (perfil existe) */
   whatsappVerified?: boolean;
-  /** Score 0-100 de confiança que o número tem WhatsApp ativo */
   whatsappScore?: number;
-  /** Origem do telefone vencedor: osm | website | instagram | linktree */
-  phoneSource?: 'osm' | 'website' | 'instagram' | 'linktree' | 'unknown';
+  phoneSource?: 'gmaps' | 'osm' | 'website' | 'instagram' | 'linktree' | 'unknown';
 }
 
 export interface SearchQuery {

@@ -54,7 +54,7 @@ export async function loadAll(): Promise<{ leads: Lead[]; history: SearchHistory
     supabase.from('saved_leads').select('data').eq('session_id', session_id).order('created_at', { ascending: false }).limit(2000),
     supabase.from('saved_searches').select('*').eq('session_id', session_id).order('executed_at', { ascending: false }).limit(50),
   ]);
-  const leads = (leadRows || []).map(r => r.data as Lead);
+  const leads = (leadRows || []).map(r => r.data as unknown as Lead);
   const history: SearchHistory[] = (searchRows || []).map(s => ({
     id: s.id,
     query: {
