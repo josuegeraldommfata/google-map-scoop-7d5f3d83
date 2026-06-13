@@ -10,6 +10,7 @@ export interface Lead {
   whatsapp: string | null;
   website: string | null;
   instagram: string | null;
+  email?: string | null;
   rating: number;
   reviewCount: number;
   type: 'hot' | 'cold';
