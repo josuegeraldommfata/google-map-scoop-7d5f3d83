@@ -243,6 +243,12 @@ export function LeadsTable({ leads }: Props) {
                       <span className="truncate max-w-[140px]">{lead.instagram}</span>
                     </div>
                   )}
+                  {lead.email && (
+                    <div className="flex items-center gap-1.5 text-xs text-cold mt-1">
+                      <span className="text-muted-foreground">✉</span>
+                      <a href={`mailto:${lead.email}`} className="truncate max-w-[160px] hover:underline">{lead.email}</a>
+                    </div>
+                  )}
                 </td>
                 <td className="p-3 text-center">
                   {lead.rating > 0 ? (
