@@ -257,34 +257,65 @@ Deno.serve(async (req) => {
     const cities = (q.cities?.length ? q.cities : ['']).map(c => c.trim()).filter(Boolean);
     const kw = (q.keywords || []).filter(Boolean).join(' ');
     const variations = nicheVariations(q.niche);
-    console.log('[leads] niche=', q.niche, 'variations=', variations, 'cities=', cities, 'total=', total);
+
+    // Modificadores geográficos: multiplica a cobertura quando o usuário quer muitos leads.
+    // O Google Maps satura em ~60-120 resultados por query única (mesmo paginando),
+    // então quebramos a busca em várias zonas/bairros pra coletar muito mais.
+    const ZONE_MODIFIERS = [
+      '', 'centro', 'zona sul', 'zona norte', 'zona leste', 'zona oeste',
+      'região central', 'bairro nobre', 'periferia', 'região metropolitana',
+    ];
+    const zoneCount =
+      total <= 50 ? 1 :
+      total <= 100 ? 3 :
+      total <= 200 ? 5 :
+      total <= 350 ? 7 : ZONE_MODIFIERS.length;
+    const zones = ZONE_MODIFIERS.slice(0, zoneCount);
+
+    console.log('[leads] niche=', q.niche, 'variations=', variations, 'cities=', cities, 'zones=', zones.length, 'total=', total);
 
     const seenPlace = new Set<string>();
     const seenPhones = new Set<string>();
     const allPlaces: Array<Partial<Lead> & { _city: string }> = [];
 
-    // Roda TODAS as combinações (variação × cidade) em paralelo
-    const combos: Array<{ variation: string; city: string; query: string }> = [];
+    // Todas as combinações (variação × cidade × zona) em paralelo
+    const combos: Array<{ variation: string; city: string; zone: string; query: string }> = [];
     for (const city of cities) {
       for (const variation of variations) {
-        const query = `${variation} ${kw} ${city} ${q.state}`.replace(/\s+/g, ' ').trim();
-        combos.push({ variation, city, query });
+        for (const zone of zones) {
+          const query = `${variation} ${kw} ${zone} ${city} ${q.state}`.replace(/\s+/g, ' ').trim();
+          combos.push({ variation, city, zone, query });
+        }
       }
     }
 
-    // Limita páginas por combo conforme número de combos pra não estourar tempo
-    const perCombo = Math.max(20, Math.ceil((total * 1.5) / combos.length));
-    const maxPagesPerCombo = combos.length > 8 ? 4 : combos.length > 4 ? 6 : 10;
+    // Páginas por combo: quanto mais combos, menos páginas (latência).
+    const perCombo = Math.max(20, Math.ceil((total * 2) / combos.length));
+    const maxPagesPerCombo =
+      combos.length > 30 ? 3 :
+      combos.length > 15 ? 4 :
+      combos.length > 8 ? 6 : 10;
 
-    const results = await Promise.all(
-      combos.map(c => scrapeGmaps(c.query, perCombo, maxPagesPerCombo).then(places => ({ ...c, places })))
-    );
+    console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
 
-    for (const { city, places } of results) {
-      for (const p of places) {
-        if (!p.placeId || seenPlace.has(p.placeId)) continue;
-        seenPlace.add(p.placeId);
-        allPlaces.push({ ...p, _city: city });
+    // Processa em lotes pra não disparar 50+ fetches simultâneos
+    const BATCH = 8;
+    for (let i = 0; i < combos.length; i += BATCH) {
+      const batch = combos.slice(i, i + BATCH);
+      const results = await Promise.all(
+        batch.map(c => scrapeGmaps(c.query, perCombo, maxPagesPerCombo).then(places => ({ ...c, places })))
+      );
+      for (const { city, places } of results) {
+        for (const p of places) {
+          if (!p.placeId || seenPlace.has(p.placeId)) continue;
+          seenPlace.add(p.placeId);
+          allPlaces.push({ ...p, _city: city });
+        }
+      }
+      // Se já temos bem mais do que precisa, podemos parar cedo
+      if (allPlaces.length >= total * 1.4) {
+        console.log(`[leads] early-stop: ${allPlaces.length} places coletados`);
+        break;
       }
     }
 

@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
 import { Zap, Sparkles } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
@@ -99,6 +100,7 @@ export default function Index() {
                 <span>{leads.length} leads na sessão</span>
               </div>
             )}
+            <ThemeToggle />
           </header>
 
           <main className="flex-1 overflow-auto">
