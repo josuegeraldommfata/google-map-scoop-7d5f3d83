@@ -1,9 +1,11 @@
 // Edge function: scraping REAL do Google Maps (sem API key, sem navegador).
-// Estratégia em 2 passos (HTTP puro):
-//   1) GET /maps/search/{query} → extrai URL canônica com pb=
-//   2) GET dessa URL (paginando com &start=N) → JSON prefixado por )]}'
-//   3) Resultados em data[64]; cada place é um array com offsets conhecidos
-// MELHORIA: expande nicho em variações (sinônimos) e roda em paralelo p/ trazer MUITO mais leads.
+// Estratégia: GET /maps/search → extrai URL canônica → pagina &start=N → parse JSON.
+// MELHORIAS desta versão:
+//  - Bairros REAIS das maiores cidades BR (não só "zona sul")
+//  - Sub-áreas para advocacia (trabalhista, criminal, civil, família, tributário...)
+//  - Extração de email + Instagram do site oficial
+//  - Retry em falhas de fetch
+//  - Dedup por placeId + telefone + nome normalizado
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +28,7 @@ interface Lead {
   whatsapp: string | null;
   website: string | null;
   instagram: string | null;
+  email?: string | null;
   rating: number;
   reviewCount: number;
   type: 'hot' | 'cold';
@@ -42,8 +45,6 @@ interface Lead {
   whatsappScore?: number;
   phoneSource?: 'gmaps' | 'website' | 'instagram' | 'unknown';
 }
-
-// ===================== Utils =====================
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
@@ -63,17 +64,26 @@ function normalizeBR(raw: string): string {
 
 function isMobileBR(d: string): boolean { return d.length === 11 && d[2] === '9'; }
 
-// Sinônimos/variações por nicho (PT-BR). Bate o nicho normalizado contra chaves.
+function normalizeName(n: string): string {
+  return (n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+// ============ Sinônimos + sub-áreas ============
 const NICHE_VARIATIONS: Record<string, string[]> = {
-  'dentista': ['dentista', 'consultório odontológico', 'clínica odontológica', 'odontologia'],
-  'advogado': ['advogado', 'escritório de advocacia', 'advocacia'],
+  'dentista': ['dentista', 'consultório odontológico', 'clínica odontológica', 'odontologia', 'implantodontia', 'ortodontia'],
+  'advogado': [
+    'advogado', 'escritório de advocacia', 'advocacia',
+    'advogado trabalhista', 'advogado criminalista', 'advogado civil',
+    'advogado de família', 'advogado tributarista', 'advogado previdenciário',
+    'advogado empresarial', 'advogado imobiliário', 'sociedade de advogados',
+  ],
   'medico': ['médico', 'clínica médica', 'consultório médico'],
   'clinica medica': ['clínica médica', 'consultório médico', 'centro médico'],
   'restaurante': ['restaurante', 'rotisseria', 'bistrô'],
-  'academia': ['academia', 'studio de musculação', 'crossfit'],
+  'academia': ['academia', 'studio de musculação', 'crossfit', 'box de crossfit'],
   'salao de beleza': ['salão de beleza', 'cabeleireiro', 'studio de beleza'],
   'barbearia': ['barbearia', 'barber shop'],
-  'estetica': ['clínica de estética', 'estética avançada', 'centro estético'],
+  'estetica': ['clínica de estética', 'estética avançada', 'centro estético', 'harmonização facial'],
   'imobiliaria': ['imobiliária', 'corretor de imóveis'],
   'contabilidade': ['contabilidade', 'escritório contábil', 'contador'],
   'pet shop': ['pet shop', 'pet center', 'clínica veterinária'],
@@ -93,62 +103,98 @@ const NICHE_VARIATIONS: Record<string, string[]> = {
 };
 
 function normalizeNiche(n: string): string {
-  return n.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .trim();
+  return n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
 function nicheVariations(niche: string): string[] {
   const key = normalizeNiche(niche);
   if (NICHE_VARIATIONS[key]) return NICHE_VARIATIONS[key];
-  // fuzzy: chave contém ou está contida
   for (const k of Object.keys(NICHE_VARIATIONS)) {
     if (key.includes(k) || k.includes(key)) return NICHE_VARIATIONS[k];
   }
   return [niche];
 }
 
-// ===================== Google Maps scraper =====================
+// ============ Bairros REAIS das grandes cidades ============
+const NEIGHBORHOODS: Record<string, string[]> = {
+  'sao paulo': [
+    'centro', 'paulista', 'pinheiros', 'vila madalena', 'itaim bibi', 'moema', 'jardins',
+    'vila olimpia', 'brooklin', 'morumbi', 'tatuape', 'mooca', 'santana', 'lapa',
+    'butantã', 'campo belo', 'vila mariana', 'liberdade', 'bela vista', 'perdizes',
+    'higienopolis', 'ipiranga', 'penha', 'santo amaro',
+  ],
+  'rio de janeiro': [
+    'centro', 'copacabana', 'ipanema', 'leblon', 'barra da tijuca', 'botafogo', 'flamengo',
+    'tijuca', 'recreio', 'jacarepagua', 'meier', 'campo grande', 'madureira', 'sao cristovao',
+    'icarai', 'lagoa', 'gloria', 'lapa',
+  ],
+  'belo horizonte': [
+    'centro', 'savassi', 'lourdes', 'funcionarios', 'buritis', 'pampulha', 'barreiro',
+    'venda nova', 'cidade nova', 'castelo', 'belvedere', 'sion', 'anchieta', 'cruzeiro',
+  ],
+  'brasilia': ['asa sul', 'asa norte', 'lago sul', 'lago norte', 'sudoeste', 'taguatinga', 'aguas claras', 'ceilandia', 'gama', 'guara'],
+  'curitiba': ['centro', 'batel', 'agua verde', 'bigorrilho', 'cabral', 'ahu', 'portao', 'boqueirao', 'cic', 'sitio cercado'],
+  'porto alegre': ['centro', 'moinhos de vento', 'bela vista', 'petropolis', 'menino deus', 'cidade baixa', 'cristal', 'partenon'],
+  'salvador': ['centro', 'barra', 'pituba', 'itaigara', 'caminho das arvores', 'graça', 'rio vermelho', 'cabula', 'piata'],
+  'fortaleza': ['centro', 'aldeota', 'meireles', 'cocó', 'papicu', 'fátima', 'parquelandia', 'messejana'],
+  'recife': ['centro', 'boa viagem', 'pina', 'casa forte', 'aflitos', 'derby', 'graças', 'jaqueira', 'imbiribeira'],
+};
 
+const GENERIC_ZONES = [
+  '', 'centro', 'zona sul', 'zona norte', 'zona leste', 'zona oeste', 'região metropolitana',
+];
+
+function zonesFor(city: string, count: number): string[] {
+  const key = normalizeNiche(city);
+  const hoods = NEIGHBORHOODS[key];
+  if (hoods && hoods.length) {
+    return ['', ...hoods].slice(0, count);
+  }
+  return GENERIC_ZONES.slice(0, Math.min(count, GENERIC_ZONES.length));
+}
+
+// ============ Fetch com retry ============
+async function fetchWithRetry(url: string, opts: RequestInit, timeoutMs = 15000, retries = 1): Promise<Response | null> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      const res = await fetch(url, { ...opts, signal: ctrl.signal });
+      clearTimeout(t);
+      if (res.ok) return res;
+      if (res.status === 429 || res.status >= 500) continue;
+      return res;
+    } catch { /* retry */ }
+  }
+  return null;
+}
+
+// ============ Google Maps ============
 async function getSearchUrl(query: string): Promise<string | null> {
   const url = `https://www.google.com/maps/search/${encodeURIComponent(query)}?hl=pt-BR&gl=br`;
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 15000);
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!res.ok) { console.log('[gmaps] step1 status', res.status); return null; }
-    const html = await res.text();
-    const m = html.match(/href="(\/search\?tbm=map[^"]+)"/);
-    if (!m) { console.log('[gmaps] pb url não encontrada (consent wall?)'); return null; }
-    return 'https://www.google.com' + m[1].replace(/&amp;/g, '&');
-  } catch (e) {
-    console.log('[gmaps] step1 erro', String(e));
-    return null;
-  }
+  const res = await fetchWithRetry(url, {
+    headers: {
+      'User-Agent': UA,
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  }, 15000, 2);
+  if (!res || !res.ok) return null;
+  const html = await res.text();
+  const m = html.match(/href="(\/search\?tbm=map[^"]+)"/);
+  if (!m) return null;
+  return 'https://www.google.com' + m[1].replace(/&amp;/g, '&');
 }
 
 async function fetchPage(searchUrl: string, start: number): Promise<any[]> {
   const url = start === 0 ? searchUrl : `${searchUrl}&start=${start}`;
+  const res = await fetchWithRetry(url, {
+    headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8' },
+  }, 20000, 1);
+  if (!res || !res.ok) return [];
+  let raw = await res.text();
+  if (raw.startsWith(")]}'")) raw = raw.slice(4).trim(); else return [];
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 20000);
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8' },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!res.ok) return [];
-    let raw = await res.text();
-    if (raw.startsWith(")]}'")) raw = raw.slice(4).trim();
-    else return [];
     const data = JSON.parse(raw);
     const arr = data[64];
     if (!Array.isArray(arr)) return [];
@@ -206,10 +252,8 @@ async function scrapeGmaps(query: string, limit: number, maxPages = 8): Promise<
   return out.slice(0, limit);
 }
 
-// ===================== WhatsApp verification =====================
-
+// ============ WhatsApp ============
 const waCache = new Map<string, boolean>();
-
 async function verifyWhatsApp(numberBR: string): Promise<boolean> {
   if (!numberBR || !isMobileBR(numberBR)) return false;
   if (waCache.has(numberBR)) return waCache.get(numberBR)!;
@@ -233,21 +277,36 @@ async function verifyWhatsApp(numberBR: string): Promise<boolean> {
   } catch { waCache.set(numberBR, false); return false; }
 }
 
-async function fetchInstagramFromSite(website: string): Promise<string | null> {
+// ============ Enrich do site (Instagram + Email + Telefone) ============
+async function enrichFromSite(website: string): Promise<{ instagram: string | null; email: string | null; phone: string | null }> {
+  const empty = { instagram: null, email: null, phone: null };
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 3500);
+    const t = setTimeout(() => ctrl.abort(), 4500);
     const res = await fetch(website, { headers: { 'User-Agent': UA }, signal: ctrl.signal });
     clearTimeout(t);
-    if (!res.ok) return null;
+    if (!res.ok) return empty;
     const html = await res.text();
-    const m = html.match(/instagram\.com\/(?!p\/|reel|reels|explore|stories|accounts|about)([A-Za-z0-9_.]{2,30})/i);
-    return m ? `@${m[1].replace(/\/$/, '')}` : null;
-  } catch { return null; }
+
+    const ig = html.match(/instagram\.com\/(?!p\/|reel|reels|explore|stories|accounts|about)([A-Za-z0-9_.]{2,30})/i);
+    const instagram = ig ? `@${ig[1].replace(/\/$/, '')}` : null;
+
+    // Email — ignora imagens e domínios genéricos de exemplo
+    const emails = html.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+    const email = emails.find(e =>
+      !/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(e) &&
+      !/example\.|sentry\.|wixpress|godaddy|cloudflare/i.test(e)
+    ) || null;
+
+    // Telefone do site (fallback)
+    const phoneMatch = html.match(/(?:\+?55\s?)?(?:\(?\d{2}\)?[\s.-]?)?9?\d{4}[\s.-]?\d{4}/);
+    const phone = phoneMatch ? normalizeBR(phoneMatch[0]) : null;
+
+    return { instagram, email, phone: phone || null };
+  } catch { return empty; }
 }
 
-// ===================== Handler =====================
-
+// ============ Handler ============
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -258,48 +317,39 @@ Deno.serve(async (req) => {
     const kw = (q.keywords || []).filter(Boolean).join(' ');
     const variations = nicheVariations(q.niche);
 
-    // Modificadores geográficos: multiplica a cobertura quando o usuário quer muitos leads.
-    // O Google Maps satura em ~60-120 resultados por query única (mesmo paginando),
-    // então quebramos a busca em várias zonas/bairros pra coletar muito mais.
-    const ZONE_MODIFIERS = [
-      '', 'centro', 'zona sul', 'zona norte', 'zona leste', 'zona oeste',
-      'região central', 'bairro nobre', 'periferia', 'região metropolitana',
-    ];
     const zoneCount =
-      total <= 50 ? 1 :
-      total <= 100 ? 3 :
-      total <= 200 ? 5 :
-      total <= 350 ? 7 : ZONE_MODIFIERS.length;
-    const zones = ZONE_MODIFIERS.slice(0, zoneCount);
+      total <= 50 ? 2 :
+      total <= 100 ? 5 :
+      total <= 200 ? 10 :
+      total <= 350 ? 16 : 25;
 
-    console.log('[leads] niche=', q.niche, 'variations=', variations, 'cities=', cities, 'zones=', zones.length, 'total=', total);
+    console.log('[leads] niche=', q.niche, 'variations=', variations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
 
     const seenPlace = new Set<string>();
     const seenPhones = new Set<string>();
+    const seenNames = new Set<string>();
     const allPlaces: Array<Partial<Lead> & { _city: string }> = [];
 
-    // Todas as combinações (variação × cidade × zona) em paralelo
-    const combos: Array<{ variation: string; city: string; zone: string; query: string }> = [];
+    const combos: Array<{ city: string; query: string }> = [];
     for (const city of cities) {
+      const zones = zonesFor(city, zoneCount);
       for (const variation of variations) {
         for (const zone of zones) {
           const query = `${variation} ${kw} ${zone} ${city} ${q.state}`.replace(/\s+/g, ' ').trim();
-          combos.push({ variation, city, zone, query });
+          combos.push({ city, query });
         }
       }
     }
 
-    // Páginas por combo: quanto mais combos, menos páginas (latência).
-    const perCombo = Math.max(20, Math.ceil((total * 2) / combos.length));
+    const perCombo = Math.max(20, Math.ceil((total * 2) / Math.max(1, combos.length)));
     const maxPagesPerCombo =
+      combos.length > 60 ? 2 :
       combos.length > 30 ? 3 :
-      combos.length > 15 ? 4 :
-      combos.length > 8 ? 6 : 10;
+      combos.length > 15 ? 5 : 8;
 
     console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
 
-    // Processa em lotes pra não disparar 50+ fetches simultâneos
-    const BATCH = 8;
+    const BATCH = 10;
     for (let i = 0; i < combos.length; i += BATCH) {
       const batch = combos.slice(i, i + BATCH);
       const results = await Promise.all(
@@ -308,48 +358,63 @@ Deno.serve(async (req) => {
       for (const { city, places } of results) {
         for (const p of places) {
           if (!p.placeId || seenPlace.has(p.placeId)) continue;
+          const nk = normalizeName(p.name || '');
+          if (nk && seenNames.has(nk + '|' + city)) continue;
           seenPlace.add(p.placeId);
+          if (nk) seenNames.add(nk + '|' + city);
           allPlaces.push({ ...p, _city: city });
         }
       }
-      // Se já temos bem mais do que precisa, podemos parar cedo
-      if (allPlaces.length >= total * 1.4) {
-        console.log(`[leads] early-stop: ${allPlaces.length} places coletados`);
+      if (allPlaces.length >= total * 1.5) {
+        console.log(`[leads] early-stop: ${allPlaces.length} places`);
         break;
       }
     }
 
-    console.log(`[leads] ${allPlaces.length} places únicos coletados de ${combos.length} buscas`);
+    console.log(`[leads] ${allPlaces.length} places únicos de ${combos.length} buscas`);
 
-    // Trunca antes de enriquecer (custoso) — pega 20% extra pra compensar duplicatas de phone
-    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.2));
+    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.3));
 
-    const enriched = await Promise.all(toEnrich.map(async (p) => {
-      let instagram: string | null = null;
-      if (p.website) instagram = await fetchInstagramFromSite(p.website);
-      const phone = p.phone || '';
-      const verified = phone ? await verifyWhatsApp(phone) : false;
-      const lead: Lead = {
-        id: p.placeId || crypto.randomUUID(),
-        name: p.name || '',
-        address: p.address || `${p._city}, ${q.state}`,
-        phone, whatsapp: phone || null,
-        website: p.website || null,
-        instagram,
-        rating: p.rating || 0,
-        reviewCount: p.reviewCount || 0,
-        type: p.website ? 'cold' : 'hot',
-        niche: q.niche,
-        city: p._city, state: q.state,
-        foundAt: new Date().toISOString(),
-        category: p.category, placeId: p.placeId, mapsUrl: p.mapsUrl,
-        phoneFromInstagram: false, adsStatus: 'unknown',
-        whatsappVerified: verified,
-        whatsappScore: verified ? 95 : (phone ? 30 : 0),
-        phoneSource: phone ? 'gmaps' : 'unknown',
-      };
-      return lead;
-    }));
+    // Enriquecimento paralelo em lotes
+    const enriched: Lead[] = [];
+    const ENRICH_BATCH = 15;
+    for (let i = 0; i < toEnrich.length; i += ENRICH_BATCH) {
+      const slice = toEnrich.slice(i, i + ENRICH_BATCH);
+      const out = await Promise.all(slice.map(async (p) => {
+        let instagram: string | null = null;
+        let email: string | null = null;
+        let phone = p.phone || '';
+        let phoneSource: Lead['phoneSource'] = phone ? 'gmaps' : 'unknown';
+        if (p.website) {
+          const site = await enrichFromSite(p.website);
+          instagram = site.instagram;
+          email = site.email;
+          if (!phone && site.phone) { phone = site.phone; phoneSource = 'website'; }
+        }
+        const verified = phone ? await verifyWhatsApp(phone) : false;
+        const lead: Lead = {
+          id: p.placeId || crypto.randomUUID(),
+          name: p.name || '',
+          address: p.address || `${p._city}, ${q.state}`,
+          phone, whatsapp: phone || null,
+          website: p.website || null,
+          instagram, email,
+          rating: p.rating || 0,
+          reviewCount: p.reviewCount || 0,
+          type: p.website ? 'cold' : 'hot',
+          niche: q.niche,
+          city: p._city, state: q.state,
+          foundAt: new Date().toISOString(),
+          category: p.category, placeId: p.placeId, mapsUrl: p.mapsUrl,
+          phoneFromInstagram: false, adsStatus: 'unknown',
+          whatsappVerified: verified,
+          whatsappScore: verified ? 95 : (phone ? 30 : 0),
+          phoneSource,
+        };
+        return lead;
+      }));
+      enriched.push(...out);
+    }
 
     const finalLeads: Lead[] = [];
     for (const l of enriched) {
@@ -361,7 +426,8 @@ Deno.serve(async (req) => {
     }
 
     const verifiedCount = finalLeads.filter(l => l.whatsappVerified).length;
-    console.log(`[leads] retornando ${finalLeads.length} (${verifiedCount} WhatsApp verificados)`);
+    const withEmail = finalLeads.filter(l => l.email).length;
+    console.log(`[leads] retornando ${finalLeads.length} (${verifiedCount} WA verificados, ${withEmail} c/ email)`);
 
     return new Response(JSON.stringify({ leads: finalLeads, total: finalLeads.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
