@@ -382,7 +382,6 @@ Deno.serve(async (req) => {
     if (total > 120) {
       const fastLeads: Lead[] = [];
       for (const p of finalTargetPlaces) {
-        const key = p.phone || p.placeId || normalizeName(p.name || '');
         if (p.phone && seenPhones.has(p.phone)) continue;
         if (p.phone) seenPhones.add(p.phone);
         fastLeads.push({
