@@ -379,6 +379,46 @@ Deno.serve(async (req) => {
 
     const finalTargetPlaces = allPlaces.slice(0, total);
 
+    if (total > 120) {
+      const fastLeads: Lead[] = [];
+      for (const p of finalTargetPlaces) {
+        const key = p.phone || p.placeId || normalizeName(p.name || '');
+        if (p.phone && seenPhones.has(p.phone)) continue;
+        if (p.phone) seenPhones.add(p.phone);
+        fastLeads.push({
+          id: p.placeId || crypto.randomUUID(),
+          name: p.name || '',
+          address: p.address || `${p._city}, ${q.state}`,
+          phone: p.phone || '',
+          whatsapp: p.phone || null,
+          website: p.website || null,
+          instagram: null,
+          email: null,
+          rating: p.rating || 0,
+          reviewCount: p.reviewCount || 0,
+          type: p.website ? 'cold' : 'hot',
+          niche: q.niche,
+          city: p._city,
+          state: q.state,
+          foundAt: new Date().toISOString(),
+          category: p.category,
+          placeId: p.placeId,
+          mapsUrl: p.mapsUrl,
+          phoneFromInstagram: false,
+          adsStatus: 'unknown',
+          whatsappVerified: false,
+          whatsappScore: p.phone ? 30 : 0,
+          phoneSource: p.phone ? 'gmaps' : 'unknown',
+        });
+        if (fastLeads.length >= total) break;
+      }
+
+      console.log(`[leads] retornando ${fastLeads.length} em modo volume`);
+      return new Response(JSON.stringify({ leads: fastLeads, total: fastLeads.length, mode: 'volume' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Enriquecimento de site + verificação de WhatsApp são as partes mais caras da função.
     // Para buscas grandes, prioriza entregar volume de leads sem estourar CPU do worker.
     const enrichLimit =
