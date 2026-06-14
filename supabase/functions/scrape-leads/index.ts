@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
           allPlaces.push({ ...p, _city: city });
         }
       }
-      if (allPlaces.length >= total * 1.5) {
+      if (allPlaces.length >= total * 1.2) {
         console.log(`[leads] early-stop: ${allPlaces.length} places`);
         break;
       }
@@ -377,11 +377,11 @@ Deno.serve(async (req) => {
 
     console.log(`[leads] ${allPlaces.length} places únicos de ${combos.length} buscas`);
 
-    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.3));
+    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.1));
 
-    // Enriquecimento paralelo em lotes
+    // Enriquecimento paralelo em lotes (CPU-bound — manter pequeno)
     const enriched: Lead[] = [];
-    const ENRICH_BATCH = 15;
+    const ENRICH_BATCH = 8;
     for (let i = 0; i < toEnrich.length; i += ENRICH_BATCH) {
       const slice = toEnrich.slice(i, i + ENRICH_BATCH);
       const out = await Promise.all(slice.map(async (p) => {
