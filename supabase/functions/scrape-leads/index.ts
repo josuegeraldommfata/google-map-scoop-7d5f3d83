@@ -405,9 +405,9 @@ Deno.serve(async (req) => {
           placeId: p.placeId,
           mapsUrl: p.mapsUrl,
           phoneFromInstagram: false,
-          adsStatus: 'unknown',
+          adsStatus: (p.reviewCount || 0) >= 100 && (p.rating || 0) >= 4.5 ? 'tubarao' : 'unknown',
           whatsappVerified: false,
-          whatsappScore: p.phone ? 30 : 0,
+          whatsappScore: p.phone ? (isMobileBR(p.phone) ? 60 : 20) : 0,
           phoneSource: p.phone ? 'gmaps' : 'unknown',
         });
         if (fastLeads.length >= total) break;
