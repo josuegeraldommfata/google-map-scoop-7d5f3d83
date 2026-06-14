@@ -1,5 +1,7 @@
 // Persistência simples (sem login) — escopo por session_id no localStorage.
-import { supabase } from "@/integrations/supabase/client";
+// O session_id é enviado via header `x-session-id` e validado pelas RLS policies.
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
 
 const SESSION_KEY = "leads_hunter_session";
@@ -12,6 +14,17 @@ export function getSessionId(): string {
   }
   return id;
 }
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+// Cliente dedicado que envia o session_id em todo request, permitindo
+// que as RLS policies escopem leitura/escrita por sessão.
+const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { "x-session-id": getSessionId() } },
+});
+
 
 export async function saveSearch(query: SearchQuery, leads: Lead[]): Promise<string | null> {
   const session_id = getSessionId();
