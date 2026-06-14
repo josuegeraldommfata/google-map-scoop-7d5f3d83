@@ -318,13 +318,13 @@ Deno.serve(async (req) => {
     const variations = nicheVariations(q.niche);
 
     const zoneCount =
-      total <= 50 ? 2 :
-      total <= 100 ? 4 :
-      total <= 200 ? 6 :
-      total <= 350 ? 8 : 10;
+      total <= 50 ? 3 :
+      total <= 100 ? 5 :
+      total <= 200 ? 8 :
+      total <= 350 ? 11 : 14;
 
     // Limita variações de nicho para evitar explosão de combos × CPU
-    const maxVariations = total <= 100 ? 3 : total <= 250 ? 4 : 5;
+    const maxVariations = total <= 100 ? 4 : total <= 250 ? 5 : 6;
     const usedVariations = variations.slice(0, maxVariations);
 
     console.log('[leads] niche=', q.niche, 'variations=', usedVariations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
@@ -345,11 +345,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    const perCombo = Math.max(16, Math.ceil((total * 1.6) / Math.max(1, combos.length)));
+    const perCombo = Math.max(20, Math.ceil((total * 1.8) / Math.max(1, combos.length)));
     const maxPagesPerCombo =
-      combos.length > 40 ? 2 :
-      combos.length > 25 ? 3 :
-      combos.length > 15 ? 5 : 8;
+      combos.length > 60 ? 2 :
+      combos.length > 35 ? 3 :
+      combos.length > 20 ? 4 :
+      combos.length > 12 ? 6 : 8;
 
     console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
 
@@ -404,9 +405,9 @@ Deno.serve(async (req) => {
           placeId: p.placeId,
           mapsUrl: p.mapsUrl,
           phoneFromInstagram: false,
-          adsStatus: 'unknown',
+          adsStatus: (p.reviewCount || 0) >= 100 && (p.rating || 0) >= 4.5 ? 'tubarao' : 'unknown',
           whatsappVerified: false,
-          whatsappScore: p.phone ? 30 : 0,
+          whatsappScore: p.phone ? (isMobileBR(p.phone) ? 60 : 20) : 0,
           phoneSource: p.phone ? 'gmaps' : 'unknown',
         });
         if (fastLeads.length >= total) break;
