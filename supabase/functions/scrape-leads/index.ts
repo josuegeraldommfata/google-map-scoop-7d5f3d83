@@ -319,11 +319,15 @@ Deno.serve(async (req) => {
 
     const zoneCount =
       total <= 50 ? 2 :
-      total <= 100 ? 5 :
-      total <= 200 ? 10 :
-      total <= 350 ? 16 : 25;
+      total <= 100 ? 4 :
+      total <= 200 ? 7 :
+      total <= 350 ? 10 : 14;
 
-    console.log('[leads] niche=', q.niche, 'variations=', variations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
+    // Limita variações de nicho para evitar explosão de combos × CPU
+    const maxVariations = total <= 100 ? 3 : total <= 250 ? 5 : 7;
+    const usedVariations = variations.slice(0, maxVariations);
+
+    console.log('[leads] niche=', q.niche, 'variations=', usedVariations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
 
     const seenPlace = new Set<string>();
     const seenPhones = new Set<string>();
@@ -333,7 +337,7 @@ Deno.serve(async (req) => {
     const combos: Array<{ city: string; query: string }> = [];
     for (const city of cities) {
       const zones = zonesFor(city, zoneCount);
-      for (const variation of variations) {
+      for (const variation of usedVariations) {
         for (const zone of zones) {
           const query = `${variation} ${kw} ${zone} ${city} ${q.state}`.replace(/\s+/g, ' ').trim();
           combos.push({ city, query });
@@ -365,7 +369,7 @@ Deno.serve(async (req) => {
           allPlaces.push({ ...p, _city: city });
         }
       }
-      if (allPlaces.length >= total * 1.5) {
+      if (allPlaces.length >= total * 1.2) {
         console.log(`[leads] early-stop: ${allPlaces.length} places`);
         break;
       }
@@ -373,11 +377,11 @@ Deno.serve(async (req) => {
 
     console.log(`[leads] ${allPlaces.length} places únicos de ${combos.length} buscas`);
 
-    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.3));
+    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.1));
 
-    // Enriquecimento paralelo em lotes
+    // Enriquecimento paralelo em lotes (CPU-bound — manter pequeno)
     const enriched: Lead[] = [];
-    const ENRICH_BATCH = 15;
+    const ENRICH_BATCH = 8;
     for (let i = 0; i < toEnrich.length; i += ENRICH_BATCH) {
       const slice = toEnrich.slice(i, i + ENRICH_BATCH);
       const out = await Promise.all(slice.map(async (p) => {
