@@ -345,11 +345,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    const perCombo = Math.max(16, Math.ceil((total * 1.6) / Math.max(1, combos.length)));
+    const perCombo = Math.max(20, Math.ceil((total * 1.8) / Math.max(1, combos.length)));
     const maxPagesPerCombo =
-      combos.length > 40 ? 2 :
-      combos.length > 25 ? 3 :
-      combos.length > 15 ? 5 : 8;
+      combos.length > 60 ? 2 :
+      combos.length > 35 ? 3 :
+      combos.length > 20 ? 4 :
+      combos.length > 12 ? 6 : 8;
 
     console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
 
