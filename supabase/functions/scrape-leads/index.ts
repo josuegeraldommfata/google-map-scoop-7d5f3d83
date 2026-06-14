@@ -320,11 +320,11 @@ Deno.serve(async (req) => {
     const zoneCount =
       total <= 50 ? 2 :
       total <= 100 ? 4 :
-      total <= 200 ? 7 :
-      total <= 350 ? 10 : 14;
+      total <= 200 ? 6 :
+      total <= 350 ? 8 : 10;
 
     // Limita variações de nicho para evitar explosão de combos × CPU
-    const maxVariations = total <= 100 ? 3 : total <= 250 ? 5 : 7;
+    const maxVariations = total <= 100 ? 3 : total <= 250 ? 4 : 5;
     const usedVariations = variations.slice(0, maxVariations);
 
     console.log('[leads] niche=', q.niche, 'variations=', usedVariations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
@@ -345,10 +345,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    const perCombo = Math.max(20, Math.ceil((total * 2) / Math.max(1, combos.length)));
+    const perCombo = Math.max(16, Math.ceil((total * 1.6) / Math.max(1, combos.length)));
     const maxPagesPerCombo =
-      combos.length > 60 ? 2 :
-      combos.length > 30 ? 3 :
+      combos.length > 40 ? 2 :
+      combos.length > 25 ? 3 :
       combos.length > 15 ? 5 : 8;
 
     console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
           allPlaces.push({ ...p, _city: city });
         }
       }
-      if (allPlaces.length >= total * 1.2) {
+      if (allPlaces.length >= total) {
         console.log(`[leads] early-stop: ${allPlaces.length} places`);
         break;
       }
