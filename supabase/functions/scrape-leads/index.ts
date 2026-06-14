@@ -320,11 +320,11 @@ Deno.serve(async (req) => {
     const zoneCount =
       total <= 50 ? 2 :
       total <= 100 ? 4 :
-      total <= 200 ? 7 :
-      total <= 350 ? 10 : 14;
+      total <= 200 ? 6 :
+      total <= 350 ? 8 : 10;
 
     // Limita variações de nicho para evitar explosão de combos × CPU
-    const maxVariations = total <= 100 ? 3 : total <= 250 ? 5 : 7;
+    const maxVariations = total <= 100 ? 3 : total <= 250 ? 4 : 5;
     const usedVariations = variations.slice(0, maxVariations);
 
     console.log('[leads] niche=', q.niche, 'variations=', usedVariations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
@@ -345,10 +345,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    const perCombo = Math.max(20, Math.ceil((total * 2) / Math.max(1, combos.length)));
+    const perCombo = Math.max(16, Math.ceil((total * 1.6) / Math.max(1, combos.length)));
     const maxPagesPerCombo =
-      combos.length > 60 ? 2 :
-      combos.length > 30 ? 3 :
+      combos.length > 40 ? 2 :
+      combos.length > 25 ? 3 :
       combos.length > 15 ? 5 : 8;
 
     console.log(`[leads] ${combos.length} combos, ${perCombo}/combo, ${maxPagesPerCombo} páginas/combo`);
@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
           allPlaces.push({ ...p, _city: city });
         }
       }
-      if (allPlaces.length >= total * 1.2) {
+      if (allPlaces.length >= total) {
         console.log(`[leads] early-stop: ${allPlaces.length} places`);
         break;
       }
@@ -377,25 +377,82 @@ Deno.serve(async (req) => {
 
     console.log(`[leads] ${allPlaces.length} places únicos de ${combos.length} buscas`);
 
-    const toEnrich = allPlaces.slice(0, Math.ceil(total * 1.1));
+    const finalTargetPlaces = allPlaces.slice(0, total);
+
+    if (total > 120) {
+      const fastLeads: Lead[] = [];
+      for (const p of finalTargetPlaces) {
+        if (p.phone && seenPhones.has(p.phone)) continue;
+        if (p.phone) seenPhones.add(p.phone);
+        fastLeads.push({
+          id: p.placeId || crypto.randomUUID(),
+          name: p.name || '',
+          address: p.address || `${p._city}, ${q.state}`,
+          phone: p.phone || '',
+          whatsapp: p.phone || null,
+          website: p.website || null,
+          instagram: null,
+          email: null,
+          rating: p.rating || 0,
+          reviewCount: p.reviewCount || 0,
+          type: p.website ? 'cold' : 'hot',
+          niche: q.niche,
+          city: p._city,
+          state: q.state,
+          foundAt: new Date().toISOString(),
+          category: p.category,
+          placeId: p.placeId,
+          mapsUrl: p.mapsUrl,
+          phoneFromInstagram: false,
+          adsStatus: 'unknown',
+          whatsappVerified: false,
+          whatsappScore: p.phone ? 30 : 0,
+          phoneSource: p.phone ? 'gmaps' : 'unknown',
+        });
+        if (fastLeads.length >= total) break;
+      }
+
+      console.log(`[leads] retornando ${fastLeads.length} em modo volume`);
+      return new Response(JSON.stringify({ leads: fastLeads, total: fastLeads.length, mode: 'volume' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Enriquecimento de site + verificação de WhatsApp são as partes mais caras da função.
+    // Para buscas grandes, prioriza entregar volume de leads sem estourar CPU do worker.
+    const enrichLimit =
+      total <= 50 ? finalTargetPlaces.length :
+      total <= 120 ? Math.min(60, finalTargetPlaces.length) :
+      total <= 250 ? Math.min(35, finalTargetPlaces.length) : 20;
+
+    const verifyLimit =
+      total <= 50 ? finalTargetPlaces.length :
+      total <= 120 ? Math.min(40, finalTargetPlaces.length) :
+      total <= 250 ? Math.min(20, finalTargetPlaces.length) : 10;
+
+    const enrichIndexes = new Set<number>();
+    for (let i = 0; i < finalTargetPlaces.length && enrichIndexes.size < enrichLimit; i++) {
+      if (finalTargetPlaces[i].website) enrichIndexes.add(i);
+    }
 
     // Enriquecimento paralelo em lotes (CPU-bound — manter pequeno)
     const enriched: Lead[] = [];
-    const ENRICH_BATCH = 8;
-    for (let i = 0; i < toEnrich.length; i += ENRICH_BATCH) {
-      const slice = toEnrich.slice(i, i + ENRICH_BATCH);
-      const out = await Promise.all(slice.map(async (p) => {
+    const ENRICH_BATCH = total <= 120 ? 6 : 4;
+    for (let i = 0; i < finalTargetPlaces.length; i += ENRICH_BATCH) {
+      const slice = finalTargetPlaces.slice(i, i + ENRICH_BATCH);
+      const out = await Promise.all(slice.map(async (p, offset) => {
+        const absoluteIndex = i + offset;
         let instagram: string | null = null;
         let email: string | null = null;
         let phone = p.phone || '';
         let phoneSource: Lead['phoneSource'] = phone ? 'gmaps' : 'unknown';
-        if (p.website) {
+        if (p.website && enrichIndexes.has(absoluteIndex)) {
           const site = await enrichFromSite(p.website);
           instagram = site.instagram;
           email = site.email;
           if (!phone && site.phone) { phone = site.phone; phoneSource = 'website'; }
         }
-        const verified = phone ? await verifyWhatsApp(phone) : false;
+        const verified = phone && absoluteIndex < verifyLimit ? await verifyWhatsApp(phone) : false;
         const lead: Lead = {
           id: p.placeId || crypto.randomUUID(),
           name: p.name || '',
@@ -418,6 +475,7 @@ Deno.serve(async (req) => {
         return lead;
       }));
       enriched.push(...out);
+      if (enriched.length >= total) break;
     }
 
     const finalLeads: Lead[] = [];
