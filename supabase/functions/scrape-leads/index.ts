@@ -337,7 +337,7 @@ Deno.serve(async (req) => {
     const combos: Array<{ city: string; query: string }> = [];
     for (const city of cities) {
       const zones = zonesFor(city, zoneCount);
-      for (const variation of variations) {
+      for (const variation of usedVariations) {
         for (const zone of zones) {
           const query = `${variation} ${kw} ${zone} ${city} ${q.state}`.replace(/\s+/g, ' ').trim();
           combos.push({ city, query });
