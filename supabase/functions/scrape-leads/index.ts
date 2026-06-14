@@ -318,13 +318,13 @@ Deno.serve(async (req) => {
     const variations = nicheVariations(q.niche);
 
     const zoneCount =
-      total <= 50 ? 2 :
-      total <= 100 ? 4 :
-      total <= 200 ? 6 :
-      total <= 350 ? 8 : 10;
+      total <= 50 ? 3 :
+      total <= 100 ? 5 :
+      total <= 200 ? 8 :
+      total <= 350 ? 11 : 14;
 
     // Limita variações de nicho para evitar explosão de combos × CPU
-    const maxVariations = total <= 100 ? 3 : total <= 250 ? 4 : 5;
+    const maxVariations = total <= 100 ? 4 : total <= 250 ? 5 : 6;
     const usedVariations = variations.slice(0, maxVariations);
 
     console.log('[leads] niche=', q.niche, 'variations=', usedVariations.length, 'cities=', cities.length, 'zoneCount=', zoneCount, 'total=', total);
