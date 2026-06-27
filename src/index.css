@@ -134,6 +134,17 @@
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 222 47% 14%;
     --sidebar-ring: 217 91% 62%;
+
+    /* Console — push deeper black + brighter accents in dark mode */
+    --console-bg: 222 47% 3%;
+    --console-fg: 210 30% 95%;
+    --console-border: 222 30% 14%;
+    --console-header: 222 47% 7%;
+    --console-header-hover: 222 47% 12%;
+    --console-info: 199 89% 70%;
+    --console-success: 142 71% 60%;
+    --console-warn: 38 95% 65%;
+    --console-error: 0 84% 70%;
   }
 }
 
