@@ -209,9 +209,9 @@ export function getWhatsAppLink(phone: string, message?: string): string {
   clean = clean.replace(/^0+/, '');
   const number = clean.startsWith('55') ? clean : `55${clean}`;
   const msg = message || `Olá! Tudo bem? Encontrei sua empresa e gostaria de apresentar uma oportunidade. Podemos conversar?`;
-  // Deep link abre direto no app do WhatsApp e evita o domínio api.whatsapp.com,
-  // que alguns navegadores/redes bloqueiam com ERR_BLOCKED_BY_RESPONSE.
-  return `whatsapp://send?phone=${number}&text=${encodeURIComponent(msg)}`;
+  // Preferir wa.me (WhatsApp Web/App) para evitar "tela em branco" em alguns navegadores.
+  // Formato: https://wa.me/<numero>?text=<mensagem>
+  return `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
 }
 
 export function leadsToCSV(leads: Lead[]): string {

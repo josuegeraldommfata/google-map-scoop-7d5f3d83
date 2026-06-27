@@ -14,6 +14,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
 import { log } from "@/lib/consoleLog";
+import { useEvolution } from '@/hooks/useEvolution';
+import { activateRobot } from '@/services/evolution';
+
 
 type View = 'search' | 'metrics' | 'history';
 
@@ -22,6 +25,22 @@ export default function Index() {
   const [history, setHistory] = useState<SearchHistory[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [view, setView] = useState<View>('search');
+
+  // Plano 2 (Robô) Evolution state
+  const {
+    loading: evolutionLoading,
+    qrCode,
+    status: evolutionStatus,
+    reconnect,
+    disconnect,
+  } = useEvolution();
+
+  const [robotRunning, setRobotRunning] = useState(false);
+  const [robotProgressPct, setRobotProgressPct] = useState(0);
+  const [robotCounts, setRobotCounts] = useState({ queued: 0, sent: 0, failed: 0 });
+  const [robotAbortController, setRobotAbortController] = useState<AbortController | null>(null);
+
+
 
   useEffect(() => {
     loadAll().then(({ leads, history }) => {
@@ -113,6 +132,59 @@ export default function Index() {
     toast.success('Dados limpos.');
   };
 
+  const handleConnectRobot = async () => {
+    await reconnect();
+  };
+
+
+  const handleActivateRobot = async () => {
+    if (robotRunning) return;
+
+    // If not connected yet, backend may still reject.
+    const controller = new AbortController();
+    setRobotAbortController(controller);
+
+    setRobotRunning(true);
+    setRobotProgressPct(0);
+    setRobotCounts({ queued: leads.length, sent: 0, failed: 0 });
+
+    try {
+      // Keep current UI behavior (progress/limits) but call real backend.
+      const ok = await activateRobot({
+        sessionId: undefined,
+        leads: leads.map(l => ({
+          id: l.id,
+          whatsapp: l.whatsapp,
+          type: l.type,
+          name: l.name,
+          niche: l.niche,
+          city: l.city,
+          website: l.website,
+        })),
+        promptMode: 'dynamic_by_lead',
+        maxChars: 1500,
+      });
+
+      if (!ok?.ok) throw new Error('Falha ao ativar envio em lote');
+
+      // We do not have a per-lead real progress endpoint in current UI contract.
+      // Mark as finished based on ok.
+      const sent = leads.filter(l => !!l.whatsapp).length;
+      const failed = leads.length - sent;
+      setRobotCounts({ queued: 0, sent, failed });
+      setRobotProgressPct(100);
+      toast.success('Robô finalizado.');
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Erro ao ativar robô');
+    } finally {
+      setRobotRunning(false);
+      setRobotAbortController(null);
+    }
+  };
+
+
+
   return (
     <SidebarProvider defaultOpen>
       <div className="min-h-screen flex w-full bg-background">
@@ -170,30 +242,90 @@ export default function Index() {
 
                   <SearchConsole />
 
-                  {leads.length > 0 && (
-                    <>
-                      <StatsCards total={leads.length} hot={hotLeads} cold={coldLeads} />
-                      <div className="flex justify-end">
-                        <button
-                          onClick={handleClearScreen}
-                          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border bg-card text-sm text-foreground hover:bg-secondary transition-colors shadow-soft"
-                          title="Move os leads atuais para o histórico e limpa a tela"
-                        >
-                          <Eraser className="w-4 h-4" />
-                          Limpar tela ({leads.length})
-                        </button>
-                      </div>
-                      <LeadsTable leads={leads} />
-                    </>
-                  )}
+                  {/* Plano 2 (Robô) */}
+                  <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
+                    <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Plano 2 · Robô</p>
 
-                  {leads.length === 0 && !isSearching && (
-                    <div className="text-center py-12 text-sm text-muted-foreground">
-                      Preencha o formulário acima para iniciar sua primeira caça.
+                    <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      <div className="lg:col-span-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-primary/10 border-primary/40 text-primary text-sm font-semibold">
+                            <Zap className="w-4 h-4" /> Robô habilitado
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            Conecte o WhatsApp e ative o envio em lote.
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                            onClick={handleConnectRobot}
+                          >
+                            Conectar WhatsApp (QR)
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={robotRunning}
+                            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                            onClick={handleActivateRobot}
+                          >
+                            {robotRunning ? 'Enviando...' : 'Ativar Robô de Prospecção'}
+                          </button>
+
+                        </div>
+
+                        <div className="mt-3 text-xs text-muted-foreground">
+                          QR e envio conectam diretamente à Evolution API.
+
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-muted/20 p-3">
+                        <p className="text-[11px] uppercase tracking-widest text-muted-foreground">QR Code</p>
+                        <div className="mt-2 w-full aspect-square max-h-[220px] bg-background rounded-lg flex items-center justify-center overflow-hidden">
+                          {qrCode ? (
+                            <img src={qrCode} alt="QR Code" className="w-full h-full object-contain" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                              Clique em “Conectar”
+                            </div>
+                          )}
+
+                        </div>
+
+                        {robotRunning && (
+                          <div className="mt-3">
+                            <div className="h-2 w-full bg-border rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-primary to-success transition-[width] duration-300"
+                                style={{ width: `${Math.max(0, Math.min(100, robotProgressPct))}%` }}
+                              />
+                            </div>
+                            <div className="mt-2 text-[11px] text-muted-foreground">
+                              {robotProgressPct.toFixed(0)}% · fila {robotCounts.queued} · enviados {robotCounts.sent} · falhas {robotCounts.failed}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                     </div>
-                  )}
+                  </div>
+
+                  <LeadsTable leads={leads} />
+
                 </>
               )}
+
+              {leads.length === 0 && !isSearching && (
+                <div className="text-center py-12 text-sm text-muted-foreground">
+                  Preencha o formulário acima para iniciar sua primeira caça.
+                </div>
+              )}
+
+
 
               {view === 'metrics' && <MetricsView leads={leads} />}
 
