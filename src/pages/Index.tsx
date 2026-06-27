@@ -5,13 +5,15 @@ import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
 import { MetricsView } from "@/components/MetricsView";
 import { AppSidebar } from "@/components/AppSidebar";
+import { SearchConsole } from "@/components/SearchConsole";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
-import { Zap, Sparkles } from "lucide-react";
+import { Zap, Sparkles, Eraser } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
+import { log } from "@/lib/consoleLog";
 
 type View = 'search' | 'metrics' | 'history';
 
