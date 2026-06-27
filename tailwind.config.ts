@@ -80,6 +80,17 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        console: {
+          DEFAULT: "hsl(var(--console-bg))",
+          foreground: "hsl(var(--console-fg))",
+          border: "hsl(var(--console-border))",
+          header: "hsl(var(--console-header))",
+          "header-hover": "hsl(var(--console-header-hover))",
+          info: "hsl(var(--console-info))",
+          success: "hsl(var(--console-success))",
+          warn: "hsl(var(--console-warn))",
+          error: "hsl(var(--console-error))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
