@@ -168,9 +168,21 @@ export default function Index() {
 
                   <SearchForm onSearch={handleSearch} isSearching={isSearching} />
 
+                  <SearchConsole />
+
                   {leads.length > 0 && (
                     <>
                       <StatsCards total={leads.length} hot={hotLeads} cold={coldLeads} />
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleClearScreen}
+                          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border bg-card text-sm text-foreground hover:bg-secondary transition-colors shadow-soft"
+                          title="Move os leads atuais para o histórico e limpa a tela"
+                        >
+                          <Eraser className="w-4 h-4" />
+                          Limpar tela ({leads.length})
+                        </button>
+                      </div>
                       <LeadsTable leads={leads} />
                     </>
                   )}
