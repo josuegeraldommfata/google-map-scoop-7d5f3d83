@@ -5,13 +5,15 @@ import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
 import { MetricsView } from "@/components/MetricsView";
 import { AppSidebar } from "@/components/AppSidebar";
+import { SearchConsole } from "@/components/SearchConsole";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
-import { Zap, Sparkles } from "lucide-react";
+import { Zap, Sparkles, Eraser } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
+import { log } from "@/lib/consoleLog";
 
 type View = 'search' | 'metrics' | 'history';
 
@@ -33,20 +35,32 @@ export default function Index() {
 
   const handleSearch = useCallback(async (query: SearchQuery) => {
     setIsSearching(true);
+    log.info(`Iniciando varredura · nicho="${query.niche}" · ${query.cities.join(", ")}/${query.state} · meta=${query.quantity}`);
+    if (query.keywords.length) log.info(`Palavras-chave: ${query.keywords.join(", ")}`);
+    const startedAt = performance.now();
     try {
+      log.info("Conectando ao motor de busca (Google Maps + enriquecimento)...");
       const { data, error } = await supabase.functions.invoke('scrape-leads', { body: query });
       if (error) throw error;
       const newLeads: Lead[] = (data?.leads || []) as Lead[];
+      const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
 
       if (newLeads.length === 0) {
+        log.warn(`Nenhum lead retornado em ${elapsed}s. Tente outro nicho ou cidade.`);
         toast.warning('Nenhum lead encontrado. Tente outro nicho ou cidade.');
       } else {
+        const hot = newLeads.filter(l => l.type === 'hot').length;
+        const cold = newLeads.filter(l => l.type === 'cold').length;
+        log.success(`${newLeads.length} leads capturados em ${elapsed}s · 🔥 ${hot} quentes · ❄ ${cold} frios`);
         toast.success(`${newLeads.length} leads capturados!`);
       }
 
       setLeads(prev => {
         const existing = new Set(prev.map(l => (l.name + l.city).toLowerCase()));
         const unique = newLeads.filter(l => !existing.has((l.name + l.city).toLowerCase()));
+        if (unique.length !== newLeads.length) {
+          log.info(`${newLeads.length - unique.length} duplicados ignorados (já estavam na sessão)`);
+        }
         return [...unique, ...prev];
       });
 
@@ -64,17 +78,38 @@ export default function Index() {
       saveSearch(query, newLeads).catch(e => console.error('save', e));
     } catch (e) {
       console.error('Erro na busca:', e);
+      log.error(`Falha na busca: ${(e as Error)?.message || e}`);
       toast.error('Erro ao buscar leads. Tente novamente.');
     } finally {
       setIsSearching(false);
     }
   }, []);
 
+  const handleClearScreen = () => {
+    if (leads.length === 0) {
+      log.warn("Tela já está vazia — nada para arquivar.");
+      return;
+    }
+    const hot = leads.filter(l => l.type === 'hot').length;
+    const cold = leads.filter(l => l.type === 'cold').length;
+    const entry: SearchHistory = {
+      id: 'arch_' + Math.random().toString(36).slice(2),
+      query: { niche: '(lote arquivado)', keywords: [], cities: ['—'], state: '—', quantity: leads.length },
+      leadsFound: leads.length, hotLeads: hot, coldLeads: cold,
+      executedAt: new Date().toISOString(),
+    };
+    setHistory(prev => [entry, ...prev]);
+    log.success(`${leads.length} leads movidos para o histórico (mock) · tela limpa.`);
+    setLeads([]);
+    toast.success("Tela limpa. Leads enviados ao histórico.");
+  };
+
   const handleClear = async () => {
     if (!confirm('Apagar todos os leads e histórico salvos desta sessão?')) return;
     await clearAll();
     setLeads([]);
     setHistory([]);
+    log.warn("Sessão totalmente limpa (leads + histórico apagados).");
     toast.success('Dados limpos.');
   };
 
@@ -133,9 +168,21 @@ export default function Index() {
 
                   <SearchForm onSearch={handleSearch} isSearching={isSearching} />
 
+                  <SearchConsole />
+
                   {leads.length > 0 && (
                     <>
                       <StatsCards total={leads.length} hot={hotLeads} cold={coldLeads} />
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleClearScreen}
+                          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border bg-card text-sm text-foreground hover:bg-secondary transition-colors shadow-soft"
+                          title="Move os leads atuais para o histórico e limpa a tela"
+                        >
+                          <Eraser className="w-4 h-4" />
+                          Limpar tela ({leads.length})
+                        </button>
+                      </div>
                       <LeadsTable leads={leads} />
                     </>
                   )}
