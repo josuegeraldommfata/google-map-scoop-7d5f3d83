@@ -82,6 +82,18 @@ export async function loadAll(): Promise<{ leads: Lead[]; history: SearchHistory
   return { leads, history };
 }
 
+export async function loadLeadsBySearch(searchId: string): Promise<Lead[]> {
+  const session_id = getSessionId();
+  const { data, error } = await supabase
+    .from('saved_leads')
+    .select('data')
+    .eq('session_id', session_id)
+    .eq('search_id', searchId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return []; }
+  return (data || []).map(r => r.data as unknown as Lead);
+}
+
 export async function clearAll(): Promise<void> {
   const session_id = getSessionId();
   await Promise.all([
