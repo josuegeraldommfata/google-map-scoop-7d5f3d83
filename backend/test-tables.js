@@ -1,0 +1,14 @@
+import db from './src/db.js';
+
+async function main() {
+  const res = await db.query(`
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public'
+    ORDER BY table_name;
+  `);
+  console.log(res.rows.map(r => r.table_name).join(', '));
+  process.exit(0);
+}
+
+main().catch(console.error);

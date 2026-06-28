@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { toast } from "sonner";
 import { Lead } from "@/types/lead";
 import {
   getWhatsAppLink, leadsToCSV, downloadFile, buildPitchMessage,
@@ -7,15 +8,25 @@ import {
 import {
   Flame, Snowflake, MessageCircle, ExternalLink, Star, Search,
   Download, ChevronLeft, ChevronRight, Filter, Globe, Phone, Instagram,
-  Crown, Smartphone, PhoneOff, Megaphone, Sparkles, ShieldCheck, ShieldAlert,
+  Crown, Smartphone, PhoneOff, Megaphone, Sparkles, ShieldCheck, ShieldAlert, Settings, Check, Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
 interface Props {
   leads: Lead[];
 }
+
+
+const TEMPLATES = [
+  { id: '1', name: 'Dor (Recomendado)', text: 'Olá {nome_empresa}, notei que vocês não aparecem no Google com site próprio...' },
+  { id: '2', name: 'Concorrência', text: 'Olá {nome_empresa}, seu concorrente em {cidade} está pegando seus clientes locais...' },
+  { id: '3', name: 'Direto e Curto', text: 'Olá {nome_empresa}, fazemos sites profissionais que geram vendas...' }
+];
+
+const MAX_CHARS = 1000;
 
 const PAGE_SIZE = 10;
 
@@ -26,6 +37,40 @@ export function LeadsTable({ leads }: Props) {
   const [onlyMobile, setOnlyMobile] = useState(false);
   const [onlyVerified, setOnlyVerified] = useState(false);
   const [page, setPage] = useState(1);
+
+  const [showConfig, setShowConfig] = useState(false);
+  const [messageTemplate, setMessageTemplate] = useState(TEMPLATES[0].text);
+  const [sentMessages, setSentMessages] = useState<Set<string>>(new Set());
+  
+  const handleSendToCrmAndWhatsApp = async (lead: Lead) => {
+    // Substituir variaveis
+    const msg = messageTemplate
+      .replace(/{nome_empresa}/g, lead.name)
+      .replace(/{cidade}/g, lead.city)
+      .replace(/{ramo}/g, lead.niche || 'seu nicho')
+      .replace(/{telefone}/g, lead.whatsapp || lead.phone);
+      
+    // Envia pro CRM
+    try {
+      const res = await fetch('/api/crm_leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead, stageId: 2 }) // Stage 2: Conversando
+      });
+      if (!res.ok) throw new Error('Erro ao salvar no CRM');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao adicionar lead ao CRM');
+    }
+    
+    // Marca como enviado localmente
+    setSentMessages(prev => new Set(prev).add(lead.id));
+    
+    // Abre WhatsApp
+    const url = getWhatsAppLink(lead.whatsapp || lead.phone, msg);
+    window.open(url, '_blank');
+  };
+
 
   const filtered = useMemo(() => {
     let result = leads;
@@ -71,6 +116,57 @@ export function LeadsTable({ leads }: Props) {
 
   return (
     <div className="rounded-xl border border-border bg-card animate-slide-up">
+      
+      {/* Settings Modal */}
+      {showConfig && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+            <h3 className="font-display text-lg mb-4">Configurar Mensagem Manual</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Modelos Prontos</label>
+                <div className="flex flex-col gap-2">
+                  {TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setMessageTemplate(t.text)}
+                      className="text-left px-3 py-2 text-sm bg-muted hover:bg-secondary rounded-lg border border-border transition-colors"
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 flex justify-between">
+                  <span>Mensagem Personalizada</span>
+                  <span className={messageTemplate.length > MAX_CHARS ? 'text-red-500 font-bold' : ''}>
+                    {messageTemplate.length} / {MAX_CHARS}
+                  </span>
+                </label>
+                <Textarea 
+                  value={messageTemplate}
+                  onChange={e => setMessageTemplate(e.target.value)}
+                  className="h-32 text-sm resize-none"
+                  placeholder="Escreva sua mensagem... Use {nome_empresa}, {cidade}..."
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Tags disponíveis: <code className="bg-muted px-1 rounded">{'{nome_empresa}'}</code>, <code className="bg-muted px-1 rounded">{'{cidade}'}</code>, <code className="bg-muted px-1 rounded">{'{ramo}'}</code>
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button onClick={() => setShowConfig(false)} className="w-full">
+                Salvar e Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap">
@@ -282,21 +378,26 @@ export function LeadsTable({ leads }: Props) {
                 <td className="p-3 text-center">
                   <div className="flex items-center justify-center gap-1">
                     {lead.whatsapp && isMobile ? (
-                      <a
-                        href={getWhatsAppLink(lead.whatsapp, buildPitchMessage(lead))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`p-1.5 rounded-md transition-colors ${
-                          lead.whatsappVerified
-                            ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 ring-1 ring-emerald-500/40'
-                            : 'bg-success/10 text-success hover:bg-success/20'
+                      <button
+                        onClick={() => handleSendToCrmAndWhatsApp(lead)}
+                        className={`p-1.5 rounded-md transition-all flex items-center gap-1 ${
+                          sentMessages.has(lead.id) 
+                            ? 'bg-success text-success-foreground hover:bg-success/90 px-2' 
+                            : lead.whatsappVerified
+                              ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 ring-1 ring-emerald-500/40'
+                              : 'bg-success/10 text-success hover:bg-success/20'
                         }`}
-                        title={lead.whatsappVerified
-                          ? `WhatsApp confirmado ativo (score ${lead.whatsappScore}/100) — abrir conversa`
-                          : `WhatsApp não verificado (score ${lead.whatsappScore ?? 0}/100) — pode ser que o número não exista no WhatsApp`}
+                        title={sentMessages.has(lead.id) ? "Mensagem Enviada! (Lead movido pro funil)" : "Enviar Proposta (Plano Manual)"}
                       >
-                        <MessageCircle className="w-4 h-4" />
-                      </a>
+                        {sentMessages.has(lead.id) ? (
+                           <>
+                             <Check className="w-4 h-4" />
+                             <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Enviada</span>
+                           </>
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                      </button>
                     ) : lead.whatsapp ? (
                       <button
                         disabled

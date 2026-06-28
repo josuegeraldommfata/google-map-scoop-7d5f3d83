@@ -4,21 +4,19 @@ import { StatsCards } from "@/components/StatsCards";
 import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
 import { MetricsView } from "@/components/MetricsView";
+import { CrmKanban } from "@/components/CrmKanban";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SearchConsole } from "@/components/SearchConsole";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Lead, SearchQuery, SearchHistory } from "@/types/lead";
-import { Zap, Sparkles, Eraser } from "lucide-react";
+import { Zap, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
 import { log } from "@/lib/consoleLog";
-import { useEvolution } from '@/hooks/useEvolution';
-import { activateRobot } from '@/services/evolution';
 
-
-type View = 'search' | 'metrics' | 'history';
+type View = 'search' | 'metrics' | 'history' | 'crm';
 
 export default function Index() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -26,21 +24,11 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
   const [view, setView] = useState<View>('search');
 
-  // Plano 2 (Robô) Evolution state
-  const {
-    loading: evolutionLoading,
-    qrCode,
-    status: evolutionStatus,
-    reconnect,
-    disconnect,
-  } = useEvolution();
-
+  // Robô client-side state
   const [robotRunning, setRobotRunning] = useState(false);
   const [robotProgressPct, setRobotProgressPct] = useState(0);
   const [robotCounts, setRobotCounts] = useState({ queued: 0, sent: 0, failed: 0 });
   const [robotAbortController, setRobotAbortController] = useState<AbortController | null>(null);
-
-
 
   useEffect(() => {
     loadAll().then(({ leads, history }) => {
@@ -93,7 +81,6 @@ export default function Index() {
       };
       setHistory(prev => [localEntry, ...prev]);
 
-      // persiste em background
       saveSearch(query, newLeads).catch(e => console.error('save', e));
     } catch (e) {
       console.error('Erro na busca:', e);
@@ -132,58 +119,118 @@ export default function Index() {
     toast.success('Dados limpos.');
   };
 
-  const handleConnectRobot = async () => {
-    await reconnect();
-  };
-
-
   const handleActivateRobot = async () => {
-    if (robotRunning) return;
+    // Abortar se já rodando
+    if (robotRunning) {
+      if (robotAbortController) robotAbortController.abort();
+      setRobotRunning(false);
+      toast.info('Robô interrompido.');
+      return;
+    }
 
-    // If not connected yet, backend may still reject.
+    if (leads.length === 0) {
+      toast.warning('Nenhum lead na tela para disparar.');
+      return;
+    }
+
     const controller = new AbortController();
     setRobotAbortController(controller);
-
     setRobotRunning(true);
     setRobotProgressPct(0);
-    setRobotCounts({ queued: leads.length, sent: 0, failed: 0 });
 
-    try {
-      // Keep current UI behavior (progress/limits) but call real backend.
-      const ok = await activateRobot({
-        sessionId: undefined,
-        leads: leads.map(l => ({
-          id: l.id,
-          whatsapp: l.whatsapp,
-          type: l.type,
-          name: l.name,
-          niche: l.niche,
-          city: l.city,
-          website: l.website,
-        })),
-        promptMode: 'dynamic_by_lead',
-        maxChars: 1500,
-      });
+    let sent = 0;
+    let failed = 0;
+    let queued = leads.length;
+    setRobotCounts({ queued, sent, failed });
 
-      if (!ok?.ok) throw new Error('Falha ao ativar envio em lote');
+    const template = localStorage.getItem('leadshunter_template') ||
+      'Olá {nome_empresa}, vi que vocês ainda não têm um site e gostaríamos de te apresentar nossa solução.';
 
-      // We do not have a per-lead real progress endpoint in current UI contract.
-      // Mark as finished based on ok.
-      const sent = leads.filter(l => !!l.whatsapp).length;
-      const failed = leads.length - sent;
-      setRobotCounts({ queued: 0, sent, failed });
-      setRobotProgressPct(100);
-      toast.success('Robô finalizado.');
-    } catch (e) {
-      console.error(e);
-      toast.error(e instanceof Error ? e.message : 'Erro ao ativar robô');
-    } finally {
+    // Filtrar apenas leads com celular (WhatsApp potencial)
+    // Telefones fixos (começam com 2,3,4 no DDD+número) são pulados
+    const isMobilePhone = (p: string) => {
+      const digits = p.replace(/\D/g, '');
+      // Formato BR: com 55 = 55DD9XXXXXXXX (13 dígitos), sem 55 = DD9XXXXXXXX (11 dígitos)
+      const local = digits.startsWith('55') ? digits.slice(2) : digits;
+      // Celular: 9º dígito é 9 após DDD (2 dígitos)
+      return local.length >= 10 && local[2] === '9';
+    };
+
+    const eligibleLeads = leads.filter(l => {
+      const p = l.whatsapp || l.phone;
+      return p && isMobilePhone(p);
+    });
+
+    const skipped = leads.length - eligibleLeads.length;
+    if (skipped > 0) {
+      toast.info(`${skipped} leads sem celular serão ignorados (fixos ou sem número).`);
+    }
+
+    if (eligibleLeads.length === 0) {
+      toast.warning('Nenhum lead com número de celular encontrado.');
       setRobotRunning(false);
       setRobotAbortController(null);
+      return;
+    }
+
+    queued = eligibleLeads.length;
+    setRobotCounts({ queued, sent, failed });
+
+    for (let i = 0; i < eligibleLeads.length; i++) {
+      if (controller.signal.aborted) break;
+
+      const lead = eligibleLeads[i];
+      const phone = lead.whatsapp || lead.phone;
+
+      // Substituir variáveis
+      const msg = template
+        .replace(/{nome_empresa}/g, lead.name)
+        .replace(/{cidade}/g, lead.city)
+        .replace(/{ramo}/g, lead.niche || 'seu ramo')
+        .replace(/{telefone}/g, phone!);
+
+      const cleanPhone = phone!.replace(/\D/g, '');
+      const number = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+      const url = `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}`;
+
+      // Salvar no CRM em background (erros são silenciosos)
+      fetch('/api/crm_leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead, stageId: 2 }),
+      }).catch(() => {});
+
+      // Abrir nova aba
+      const win = window.open(url, '_blank');
+      sent++;
+      queued--;
+      setRobotCounts({ queued, sent, failed });
+      setRobotProgressPct(((i + 1) / eligibleLeads.length) * 100);
+
+      // Aguardar 10 segundos (extensão de auto-envio ou usuário aperta Enter)
+      await new Promise<void>(resolve => {
+        const t = setTimeout(resolve, 10000);
+        controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
+      });
+
+      // Fechar a aba
+      if (win && !win.closed) win.close();
+
+      // Delay de 3s entre leads para não sobrecarregar o WhatsApp
+      if (i < eligibleLeads.length - 1 && !controller.signal.aborted) {
+        await new Promise<void>(resolve => {
+          const t = setTimeout(resolve, 3000);
+          controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
+        });
+      }
+    }
+
+    setRobotRunning(false);
+    setRobotAbortController(null);
+    if (!controller.signal.aborted) {
+      toast.success(`Disparo concluído! ${sent} WhatsApps abertos.`);
     }
   };
-
-
 
   return (
     <SidebarProvider defaultOpen>
@@ -199,6 +246,7 @@ export default function Index() {
                 {view === 'search' && 'Caçar Leads'}
                 {view === 'metrics' && 'Métricas'}
                 {view === 'history' && 'Histórico de Buscas'}
+                {view === 'crm' && 'Meu Funil'}
               </h1>
             </div>
             {leads.length > 0 && (
@@ -242,92 +290,108 @@ export default function Index() {
 
                   <SearchConsole />
 
-                  {/* Plano 2 (Robô) */}
-                  <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
-                    <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Plano 2 · Robô</p>
+                  {/* Plano 2 · Robô Client-Side */}
+                  <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                      <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                        Plano 2 · Robô em Massa
+                      </p>
+                      <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2.5 py-1 rounded-full">
+                        ⭐ Exclusivo Business
+                      </span>
+                    </div>
 
-                    <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <div className="lg:col-span-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-primary/10 border-primary/40 text-primary text-sm font-semibold">
-                            <Zap className="w-4 h-4" /> Robô habilitado
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Esquerda */}
+                      <div className="space-y-4">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-0.5 flex-shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl bg-primary/15 border border-primary/30">
+                            <Zap className="w-4 h-4 text-primary" />
                           </span>
-                          <span className="text-sm text-muted-foreground">
-                            Conecte o WhatsApp e ative o envio em lote.
-                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Automação de Navegador</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                              Dispara para cada lead um por um: abre o WhatsApp Web com a mensagem configurada, aguarda 10s e fecha a aba automaticamente.
+                            </p>
+                          </div>
                         </div>
 
-                        <div className="mt-3 flex items-center gap-2 flex-wrap">
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-secondary transition-colors"
-                            onClick={handleConnectRobot}
-                          >
-                            Conectar WhatsApp (QR)
-                          </button>
+                        <button
+                          type="button"
+                          disabled={leads.length === 0}
+                          className={`w-full px-5 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                            robotRunning
+                              ? 'bg-red-500/15 text-red-400 border border-red-500/40 hover:bg-red-500/25'
+                              : 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm'
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
+                          onClick={handleActivateRobot}
+                        >
+                          <Zap className="w-4 h-4" />
+                          {robotRunning ? '⛔ Abortar Disparos' : 'Ativar Robô de Prospecção'}
+                        </button>
 
-                          <button
-                            type="button"
-                            disabled={robotRunning}
-                            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
-                            onClick={handleActivateRobot}
-                          >
-                            {robotRunning ? 'Enviando...' : 'Ativar Robô de Prospecção'}
-                          </button>
-
-                        </div>
-
-                        <div className="mt-3 text-xs text-muted-foreground">
-                          QR e envio conectam diretamente à Evolution API.
-
-                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-relaxed">
+                          💡 Usa o texto do botão <strong>"Configurar Mensagem"</strong> na tabela abaixo. Para envio automático sem apertar Enter, instale uma extensão de WhatsApp.
+                        </p>
                       </div>
 
-                      <div className="rounded-xl border border-border bg-muted/20 p-3">
-                        <p className="text-[11px] uppercase tracking-widest text-muted-foreground">QR Code</p>
-                        <div className="mt-2 w-full aspect-square max-h-[220px] bg-background rounded-lg flex items-center justify-center overflow-hidden">
-                          {qrCode ? (
-                            <img src={qrCode} alt="QR Code" className="w-full h-full object-contain" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
-                              Clique em “Conectar”
-                            </div>
-                          )}
+                      {/* Direita: status */}
+                      <div className="rounded-xl border border-border bg-muted/20 p-4 flex flex-col justify-center min-h-[140px]">
+                        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-3">Status do Robô</p>
 
-                        </div>
+                        {!robotRunning && robotProgressPct === 0 && (
+                          <div className="text-center text-sm text-muted-foreground/50 italic py-4">
+                            Aguardando ativação...
+                          </div>
+                        )}
 
-                        {robotRunning && (
-                          <div className="mt-3">
-                            <div className="h-2 w-full bg-border rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-primary to-success transition-[width] duration-300"
-                                style={{ width: `${Math.max(0, Math.min(100, robotProgressPct))}%` }}
-                              />
+                        {(robotRunning || robotProgressPct > 0) && (
+                          <div className="space-y-3">
+                            <div>
+                              <div className="flex justify-between text-xs font-medium mb-1.5">
+                                <span className="text-muted-foreground">Progresso</span>
+                                <span className="text-foreground font-bold">{robotProgressPct.toFixed(0)}%</span>
+                              </div>
+                              <div className="h-2.5 w-full bg-border rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-primary to-success rounded-full transition-all duration-500 ease-out"
+                                  style={{ width: `${Math.max(0, Math.min(100, robotProgressPct))}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="mt-2 text-[11px] text-muted-foreground">
-                              {robotProgressPct.toFixed(0)}% · fila {robotCounts.queued} · enviados {robotCounts.sent} · falhas {robotCounts.failed}
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                              <div className="bg-success/10 border border-success/20 rounded-lg px-2 py-1.5">
+                                <p className="text-base font-bold text-success">{robotCounts.sent}</p>
+                                <p className="text-[10px] text-muted-foreground">Abertos</p>
+                              </div>
+                              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-1.5">
+                                <p className="text-base font-bold text-red-400">{robotCounts.failed}</p>
+                                <p className="text-[10px] text-muted-foreground">Sem WA</p>
+                              </div>
+                              <div className="bg-muted border border-border rounded-lg px-2 py-1.5">
+                                <p className="text-base font-bold text-foreground">{robotCounts.queued}</p>
+                                <p className="text-[10px] text-muted-foreground">Na Fila</p>
+                              </div>
                             </div>
                           </div>
                         )}
                       </div>
-
                     </div>
                   </div>
 
                   <LeadsTable leads={leads} />
-
                 </>
               )}
 
-              {leads.length === 0 && !isSearching && (
+              {leads.length === 0 && !isSearching && view === 'search' && (
                 <div className="text-center py-12 text-sm text-muted-foreground">
                   Preencha o formulário acima para iniciar sua primeira caça.
                 </div>
               )}
 
-
-
               {view === 'metrics' && <MetricsView leads={leads} />}
+
+              {view === 'crm' && <CrmKanban />}
 
               {view === 'history' && (
                 <div className="rounded-2xl border border-border bg-card p-2 shadow-soft">

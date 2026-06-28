@@ -1,12 +1,12 @@
-import { Crosshair, Search, BarChart3, History, Trash2 } from "lucide-react";
+import { Crosshair, Search, BarChart3, History, Trash2, Kanban } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 
 interface Props {
-  active: 'search' | 'metrics' | 'history';
-  onChange: (v: 'search' | 'metrics' | 'history') => void;
+  active: 'search' | 'metrics' | 'history' | 'crm';
+  onChange: (v: 'search' | 'metrics' | 'history' | 'crm') => void;
   onClear: () => void;
   totalLeads: number;
 }
@@ -17,6 +17,7 @@ export function AppSidebar({ active, onChange, onClear, totalLeads }: Props) {
 
   const items = [
     { key: 'search', label: 'Buscar Leads', icon: Search },
+    { key: 'crm', label: 'Meu Funil', icon: Kanban },
     { key: 'metrics', label: 'Métricas', icon: BarChart3 },
     { key: 'history', label: 'Histórico', icon: History },
   ] as const;
