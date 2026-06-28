@@ -175,16 +175,28 @@ export default function Index() {
       return;
     }
 
-    queued = eligibleLeads.length;
+    // Aplicar limite escolhido (50/100/300/450/500)
+    const capped = eligibleLeads.slice(0, robotLimit);
+    queued = capped.length;
     setRobotCounts({ queued, sent, failed });
+    toast.info(`Robô disparando para ${capped.length} leads em uma única aba (recarregando a cada ${robotDelay}s).`);
 
-    for (let i = 0; i < eligibleLeads.length; i++) {
+    // Abrir UMA única aba reutilizada
+    const TAB_NAME = 'leadshunter_wa';
+    let win: Window | null = window.open('about:blank', TAB_NAME);
+    if (!win) {
+      toast.error('Bloqueador de pop-up impediu abrir a aba. Permita pop-ups deste site e tente novamente.');
+      setRobotRunning(false);
+      setRobotAbortController(null);
+      return;
+    }
+
+    for (let i = 0; i < capped.length; i++) {
       if (controller.signal.aborted) break;
 
-      const lead = eligibleLeads[i];
+      const lead = capped[i];
       const phone = lead.whatsapp || lead.phone;
 
-      // Substituir variáveis
       const msg = template
         .replace(/{nome_empresa}/g, lead.name)
         .replace(/{cidade}/g, lead.city)
@@ -193,44 +205,44 @@ export default function Index() {
 
       const cleanPhone = phone!.replace(/\D/g, '');
       const number = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-      const url = `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}`;
+      const url = `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}&app_absent=0`;
 
-      // Salvar no CRM em background (erros são silenciosos)
+      // Se o usuário fechou a aba, reabrir na mesma "named window"
+      if (!win || win.closed) {
+        win = window.open(url, TAB_NAME);
+        if (!win) {
+          toast.error('Aba do WhatsApp foi bloqueada. Robô interrompido.');
+          break;
+        }
+      } else {
+        try { win.location.href = url; } catch { win = window.open(url, TAB_NAME); }
+        try { win.focus(); } catch {}
+      }
+
       fetch('/api/crm_leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead, stageId: 2 }),
       }).catch(() => {});
 
-      // Abrir nova aba
-      const win = window.open(url, '_blank');
       sent++;
       queued--;
       setRobotCounts({ queued, sent, failed });
-      setRobotProgressPct(((i + 1) / eligibleLeads.length) * 100);
+      setRobotProgressPct(((i + 1) / capped.length) * 100);
+      log.info(`[${i + 1}/${capped.length}] ${lead.name} — aba recarregada com mensagem pronta.`);
 
-      // Aguardar 10 segundos (extensão de auto-envio ou usuário aperta Enter)
+      // Aguardar tempo configurado para o usuário (ou extensão) apertar Enter
       await new Promise<void>(resolve => {
-        const t = setTimeout(resolve, 10000);
+        const t = setTimeout(resolve, robotDelay * 1000);
         controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
       });
-
-      // Fechar a aba
-      if (win && !win.closed) win.close();
-
-      // Delay de 3s entre leads para não sobrecarregar o WhatsApp
-      if (i < eligibleLeads.length - 1 && !controller.signal.aborted) {
-        await new Promise<void>(resolve => {
-          const t = setTimeout(resolve, 3000);
-          controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
-        });
-      }
     }
 
     setRobotRunning(false);
     setRobotAbortController(null);
     if (!controller.signal.aborted) {
-      toast.success(`Disparo concluído! ${sent} WhatsApps abertos.`);
+      toast.success(`Disparo concluído! ${sent} conversas abertas (limite ${robotLimit}).`);
+      log.success(`Robô finalizado: ${sent} conversas abertas em uma única aba.`);
     }
   };
 
