@@ -373,9 +373,34 @@ export default function Index() {
                           {robotRunning ? '⛔ Parar Robô' : `Ativar Robô · ${robotLimit} conversas`}
                         </button>
 
-                        <p className="text-[10px] text-muted-foreground leading-relaxed">
-                          💡 <strong>Não feche a aba do WhatsApp Web</strong> enquanto roda — o robô recarrega ela sozinho. Para enviar sem apertar Enter, instale uma extensão (ex.: "WA Auto Send"). Sem ela, o robô só deixa cada mensagem pronta no campo.
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetch('/leads-hunter-extension.zip')
+                              .then(r => { if (!r.ok) throw new Error('Falha ao baixar'); return r.blob(); })
+                              .then(blob => {
+                                const a = document.createElement('a');
+                                a.href = URL.createObjectURL(blob);
+                                a.download = 'leads-hunter-extension.zip';
+                                a.click();
+                                URL.revokeObjectURL(a.href);
+                                toast.success('Extensão baixada! Siga as instruções abaixo.');
+                              })
+                              .catch(e => toast.error(e.message));
+                          }}
+                          className="w-full px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-500 border border-emerald-500/40 hover:bg-emerald-500/25 transition-colors flex items-center justify-center gap-2"
+                        >
+                          ⬇ Baixar Extensão de Auto-Envio (.zip)
+                        </button>
+
+                        <div className="text-[10px] text-muted-foreground leading-relaxed space-y-1 rounded-lg bg-muted/30 border border-border p-2">
+                          <p><strong>📦 Como instalar (1 minuto):</strong></p>
+                          <p>1. Descompacte o .zip baixado.</p>
+                          <p>2. Abra <code className="bg-background px-1 rounded">chrome://extensions</code> no Chrome/Edge/Brave.</p>
+                          <p>3. Ative o <strong>Modo desenvolvedor</strong> (canto superior direito).</p>
+                          <p>4. Clique em <strong>Carregar sem compactação</strong> e selecione a pasta descompactada.</p>
+                          <p>5. Pronto — o robô envia sozinho. <strong>Não feche</strong> a aba do WhatsApp Web durante o disparo.</p>
+                        </div>
                       </div>
 
                       {/* Direita: status */}
