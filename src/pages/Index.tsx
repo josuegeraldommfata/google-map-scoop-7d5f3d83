@@ -29,6 +29,8 @@ export default function Index() {
   const [robotProgressPct, setRobotProgressPct] = useState(0);
   const [robotCounts, setRobotCounts] = useState({ queued: 0, sent: 0, failed: 0 });
   const [robotAbortController, setRobotAbortController] = useState<AbortController | null>(null);
+  const [robotLimit, setRobotLimit] = useState<number>(50);
+  const [robotDelay, setRobotDelay] = useState<number>(15);
 
   useEffect(() => {
     loadAll().then(({ leads, history }) => {
