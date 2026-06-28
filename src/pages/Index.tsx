@@ -323,11 +323,40 @@ export default function Index() {
                             <Zap className="w-4 h-4 text-primary" />
                           </span>
                           <div>
-                            <p className="text-sm font-semibold text-foreground">Automação de Navegador</p>
+                            <p className="text-sm font-semibold text-foreground">Automação de Navegador (1 aba só)</p>
                             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              Dispara para cada lead um por um: abre o WhatsApp Web com a mensagem configurada, aguarda 10s e fecha a aba automaticamente.
+                              Abre <strong>uma única aba</strong> do WhatsApp Web e vai recarregando ela com cada lead da fila, sem parar, até atingir o limite escolhido.
                             </p>
                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Limite de conversas</span>
+                            <select
+                              value={robotLimit}
+                              onChange={(e) => setRobotLimit(Number(e.target.value))}
+                              disabled={robotRunning}
+                              className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium"
+                            >
+                              {[50, 100, 300, 450, 500].map(n => (
+                                <option key={n} value={n}>{n} conversas</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Intervalo entre leads</span>
+                            <select
+                              value={robotDelay}
+                              onChange={(e) => setRobotDelay(Number(e.target.value))}
+                              disabled={robotRunning}
+                              className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium"
+                            >
+                              {[8, 12, 15, 20, 30, 45, 60].map(n => (
+                                <option key={n} value={n}>{n}s</option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
 
                         <button
@@ -341,11 +370,11 @@ export default function Index() {
                           onClick={handleActivateRobot}
                         >
                           <Zap className="w-4 h-4" />
-                          {robotRunning ? '⛔ Abortar Disparos' : 'Ativar Robô de Prospecção'}
+                          {robotRunning ? '⛔ Parar Robô' : `Ativar Robô · ${robotLimit} conversas`}
                         </button>
 
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
-                          💡 Usa o texto do botão <strong>"Configurar Mensagem"</strong> na tabela abaixo. Para envio automático sem apertar Enter, instale uma extensão de WhatsApp.
+                          💡 <strong>Não feche a aba do WhatsApp Web</strong> enquanto roda — o robô recarrega ela sozinho. Para enviar sem apertar Enter, instale uma extensão (ex.: "WA Auto Send"). Sem ela, o robô só deixa cada mensagem pronta no campo.
                         </p>
                       </div>
 
