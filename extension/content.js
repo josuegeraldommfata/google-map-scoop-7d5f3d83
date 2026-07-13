@@ -1,75 +1,100 @@
-// Leads Hunter — auto-send no WhatsApp Web
-// Detecta quando uma URL /send?phone=...&text=... termina de carregar
-// e clica no botao de enviar automaticamente.
+// Leads Hunter — content script (roda no painel E no WhatsApp Web)
 
 (function () {
-  const LOG = (...a) => console.log("[LeadsHunterAutoSend]", ...a);
+  const HOST = location.hostname;
+  const IS_WA = HOST === "web.whatsapp.com";
+  const LOG = (...a) => console.log("[LH cs]", ...a);
 
-  let lastUrl = location.href;
-  let attemptTimer = null;
+  // ============================================================
+  // MODO WHATSAPP WEB — clica em enviar e reporta status
+  // ============================================================
+  if (IS_WA) {
+    const DEADLINE_MS = 15000; // 15s pra achar o botão / detectar erro
+    const POST_SEND_MS = 3000; // aguarda 3s após clicar
 
-  function isSendUrl() {
-    return /[?&]phone=/.test(location.href) && /[?&]text=/.test(location.href);
-  }
+    const isSendUrl = () =>
+      /[?&]phone=/.test(location.href) && /[?&]text=/.test(location.href);
 
-  function findSendButton() {
-    // Botao "Enviar" — varios seletores de fallback (o WhatsApp Web muda DOM com frequencia)
-    return (
+    const findSendButton = () =>
       document.querySelector('button[aria-label="Enviar"]') ||
       document.querySelector('button[aria-label="Send"]') ||
       document.querySelector('[data-testid="send"]') ||
       document.querySelector('[data-icon="send"]')?.closest("button") ||
       document.querySelector('span[data-icon="send"]')?.closest("button") ||
-      document.querySelector('span[data-icon="wds-ic-send-filled"]')?.closest("button")
-    );
-  }
+      document.querySelector('span[data-icon="wds-ic-send-filled"]')?.closest("button");
 
-  function dismissModals() {
-    // Modal "Numero invalido" / "Usar WhatsApp aqui" — fechamos pra nao travar a fila
-    const okBtn = document.querySelector('div[role="dialog"] button');
-    if (okBtn && /OK|Ok|ok/.test(okBtn.textContent || "")) okBtn.click();
-  }
+    const hasInvalidNumberModal = () => {
+      const dlg = document.querySelector('div[role="dialog"]');
+      if (!dlg) return false;
+      const txt = (dlg.textContent || "").toLowerCase();
+      return /inválido|invalid|não faz parte|not on whatsapp|no válido/.test(txt);
+    };
 
-  function tryAutoSend(deadlineMs) {
-    const started = Date.now();
-    clearInterval(attemptTimer);
+    const send = (type) => {
+      try { chrome.runtime.sendMessage({ type }); } catch (_) {}
+    };
 
-    attemptTimer = setInterval(() => {
-      if (!isSendUrl()) {
-        clearInterval(attemptTimer);
+    let done = false;
+    const finish = (type) => {
+      if (done) return;
+      done = true;
+      send(type);
+    };
+
+    const start = Date.now();
+    const poll = setInterval(() => {
+      if (done) { clearInterval(poll); return; }
+
+      if (hasInvalidNumberModal()) {
+        LOG("Número inválido detectado.");
+        clearInterval(poll);
+        finish("ERRO");
         return;
       }
-      dismissModals();
+
       const btn = findSendButton();
-      if (btn) {
-        clearInterval(attemptTimer);
-        LOG("Enviando mensagem...");
+      if (btn && !btn.disabled) {
+        clearInterval(poll);
+        LOG("Clicando enviar…");
         btn.click();
+        setTimeout(() => finish("MENSAGEM_ENVIADA"), POST_SEND_MS);
         return;
       }
-      if (Date.now() - started > deadlineMs) {
-        clearInterval(attemptTimer);
-        LOG("Timeout — botao enviar nao apareceu.");
+
+      if (Date.now() - start > DEADLINE_MS) {
+        clearInterval(poll);
+        LOG("Timeout aguardando botão.");
+        finish("ERRO");
       }
-    }, 600);
+    }, 500);
+
+    // Se a URL não é de envio, não faz nada (ex.: usuário só abriu WA)
+    if (!isSendUrl()) {
+      clearInterval(poll);
+      done = true;
+    }
+    return;
   }
 
-  // Detecta SPA navigations (pushState/replaceState/popstate) sem recarga
-  const fire = () => {
-    if (location.href === lastUrl) return;
-    lastUrl = location.href;
-    if (isSendUrl()) tryAutoSend(20000);
-  };
+  // ============================================================
+  // MODO PAINEL — expõe API global usada pela plataforma
+  // ============================================================
+  window.__LEADS_HUNTER_EXT__ = { version: "2.0.0", ready: true };
+  window.dispatchEvent(new CustomEvent("leads-hunter-ext-ready", { detail: { version: "2.0.0" } }));
 
-  const _ps = history.pushState;
-  history.pushState = function () { _ps.apply(this, arguments); fire(); };
-  const _rs = history.replaceState;
-  history.replaceState = function () { _rs.apply(this, arguments); fire(); };
-  window.addEventListener("popstate", fire);
+  try { chrome.runtime.sendMessage({ type: "PANEL_HELLO" }); } catch (_) {}
 
-  // Carregamento inicial
-  if (isSendUrl()) {
-    LOG("URL de envio detectada — aguardando WhatsApp carregar...");
-    tryAutoSend(25000);
-  }
+  // Encaminha resposta do background pro app via window event
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "PODE_IR_PRO_PROXIMO") {
+      window.dispatchEvent(new CustomEvent("leads-hunter-next", { detail: msg }));
+    }
+  });
+
+  // Página pede pra abrir WhatsApp
+  window.addEventListener("leads-hunter-open", (ev) => {
+    const url = ev.detail?.url;
+    if (!url) return;
+    chrome.runtime.sendMessage({ type: "ABRIR_WHATSAPP", url });
+  });
 })();
