@@ -24,63 +24,81 @@ interface CrmLead {
 export function CrmKanban() {
   const [draggedLead, setDraggedLead] = useState<number | null>(null);
 
-  const { data, refetch } = useQuery({
+  const DEFAULT_STAGES: Stage[] = [
+    { id: 1, nome: 'Novo Lead',     cor: 'blue',   ordem: 1 },
+    { id: 2, nome: 'Contato Feito', cor: 'yellow', ordem: 2 },
+    { id: 3, nome: 'Em Negociação', cor: 'orange', ordem: 3 },
+    { id: 4, nome: 'Proposta',      cor: 'purple', ordem: 4 },
+    { id: 5, nome: 'Fechado',       cor: 'green',  ordem: 5 },
+    { id: 6, nome: 'Perdido',       cor: 'red',    ordem: 6 },
+  ];
+
+  const { data, refetch, isLoading } = useQuery({
     queryKey: ['crm-data'],
     queryFn: async () => {
-      const [pipeRes, leadsRes] = await Promise.all([
-        fetch('/api/pipelines').then(r => r.json()),
-        fetch('/api/crm_leads').then(r => r.json())
-      ]);
-      return {
-        stages: (pipeRes.stages || []) as Stage[],
-        leads: (leadsRes.leads || []) as CrmLead[]
-      };
-    }
+      const withTimeout = <T,>(p: Promise<T>, ms = 2500): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+      try {
+        const [pipeRes, leadsRes] = await Promise.all([
+          withTimeout(fetch('/api/pipelines').then(r => r.json())),
+          withTimeout(fetch('/api/crm_leads').then(r => r.json())),
+        ]);
+        const stages = (pipeRes.stages || []) as Stage[];
+        const leads = (leadsRes.leads || []) as CrmLead[];
+        return { stages: stages.length ? stages : DEFAULT_STAGES, leads };
+      } catch {
+        return { stages: DEFAULT_STAGES, leads: [] as CrmLead[] };
+      }
+    },
+    staleTime: 30_000,
+    retry: false,
   });
 
   const handleDragStart = (e: React.DragEvent, leadId: number) => {
     setDraggedLead(leadId);
     e.dataTransfer.setData('leadId', String(leadId));
   };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
   const handleDrop = async (e: React.DragEvent, stageId: number) => {
     e.preventDefault();
     const leadId = Number(e.dataTransfer.getData('leadId'));
     if (!leadId) return;
-
     try {
       const res = await fetch(`/api/crm_leads/${leadId}/stage`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stageId })
+        body: JSON.stringify({ stageId }),
       });
-      if (res.ok) {
-        toast.success('Lead movido no funil');
-        refetch();
-      }
-    } catch (err) {
-      toast.error('Erro ao mover lead');
-    }
+      if (res.ok) { toast.success('Lead movido no funil'); refetch(); }
+    } catch { toast.error('Erro ao mover lead'); }
     setDraggedLead(null);
   };
 
-  if (!data) return <div className="p-8 text-center text-muted-foreground animate-pulse">Carregando Funil...</div>;
-
-  const { stages, leads } = data;
-
-  if (stages.length === 0) {
+  if (isLoading || !data) {
     return (
-      <div className="p-12 text-center text-muted-foreground border border-border bg-card rounded-2xl mx-8 my-8 shadow-soft">
-        <Kanban className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <h2 className="text-xl font-display mb-2">Funil não configurado</h2>
-        <p className="text-sm">As etapas do CRM ainda não foram criadas no banco de dados.</p>
+      <div className="flex h-[calc(100vh-8rem)] gap-4 overflow-x-auto p-2 pb-6 items-start">
+        {[0,1,2,3,4].map(i => (
+          <div key={i} className="flex-shrink-0 w-80 h-full rounded-2xl border border-border bg-muted/30 overflow-hidden">
+            <div className="p-4 border-b border-border bg-card flex items-center justify-between">
+              <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+              <div className="h-4 w-6 rounded-full bg-muted animate-pulse" />
+            </div>
+            <div className="p-3 space-y-3">
+              {[0,1,2].map(j => (
+                <div key={j} className="rounded-xl border border-border bg-card p-4 space-y-2">
+                  <div className="h-3 w-2/3 rounded bg-muted animate-pulse" />
+                  <div className="h-2 w-1/2 rounded bg-muted animate-pulse" />
+                  <div className="h-2 w-1/3 rounded bg-muted animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
+
+  const { stages, leads } = data;
 
   const getStageColor = (color: string) => {
     const map: any = {

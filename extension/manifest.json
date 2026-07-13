@@ -1,15 +1,36 @@
 {
   "manifest_version": 3,
   "name": "Leads Hunter Auto Sender",
-  "version": "1.0.0",
-  "description": "Envia automaticamente a mensagem pre-preenchida no WhatsApp Web quando o Leads Hunter recarrega a aba.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://web.whatsapp.com/*"],
+  "version": "2.0.0",
+  "description": "Robô de prospecção: abre WhatsApp Web, envia mensagem, fecha aba e segue pro próximo lead automaticamente.",
+  "permissions": ["tabs", "activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://*.lovable.app/*",
+    "https://*.lovable.dev/*",
+    "http://localhost/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": { "service_worker": "background.js" },
   "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
   "icons": { "48": "icon.png", "128": "icon.png" },
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.lovable.app/*",
+        "https://*.lovable.dev/*",
+        "http://localhost/*",
+        "http://localhost:*/*",
+        "http://127.0.0.1/*",
+        "http://127.0.0.1:*/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
