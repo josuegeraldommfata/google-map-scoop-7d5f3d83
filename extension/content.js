@@ -9,70 +9,86 @@
   // MODO WHATSAPP WEB — clica em enviar e reporta status
   // ============================================================
   if (IS_WA) {
-    const DEADLINE_MS = 15000; // 15s pra achar o botão / detectar erro
-    const POST_SEND_MS = 3000; // aguarda 3s após clicar
+    const DEADLINE_MS = 30000; // tempo para WhatsApp carregar sem travar o robô
+    const POST_SEND_MS = 2500; // aguarda após clicar
+    let lastHandledUrl = "";
 
     const isSendUrl = () =>
       /[?&]phone=/.test(location.href) && /[?&]text=/.test(location.href);
 
-    const findSendButton = () =>
-      document.querySelector('button[aria-label="Enviar"]') ||
-      document.querySelector('button[aria-label="Send"]') ||
-      document.querySelector('[data-testid="send"]') ||
-      document.querySelector('[data-icon="send"]')?.closest("button") ||
-      document.querySelector('span[data-icon="send"]')?.closest("button") ||
-      document.querySelector('span[data-icon="wds-ic-send-filled"]')?.closest("button");
+    const findSendButton = () => {
+      const selectors = [
+        'button[aria-label="Enviar"]',
+        'button[aria-label="Send"]',
+        'button[data-tab][aria-label="Enviar"]',
+        'button[data-tab][aria-label="Send"]',
+        '[data-testid="send"]',
+        '[data-icon="send"]',
+        'span[data-icon="send"]',
+        'span[data-icon="wds-ic-send-filled"]',
+      ];
+
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        const button = el?.tagName === "BUTTON" ? el : el?.closest?.("button");
+        if (button) return button;
+      }
+
+      return null;
+    };
 
     const hasInvalidNumberModal = () => {
       const dlg = document.querySelector('div[role="dialog"]');
       if (!dlg) return false;
       const txt = (dlg.textContent || "").toLowerCase();
-      return /inválido|invalid|não faz parte|not on whatsapp|no válido/.test(txt);
+      return /inválido|invalid|não faz parte|not on whatsapp|no válido|phone number shared via url|número de telefone compartilhado/.test(txt);
     };
 
     const send = (type) => {
       try { chrome.runtime.sendMessage({ type }); } catch (_) {}
     };
 
-    let done = false;
-    const finish = (type) => {
-      if (done) return;
-      done = true;
-      send(type);
+    const run = () => {
+      if (!isSendUrl() || lastHandledUrl === location.href) return;
+      lastHandledUrl = location.href;
+
+      let done = false;
+      const finish = (type) => {
+        if (done) return;
+        done = true;
+        send(type);
+      };
+
+      const start = Date.now();
+      const poll = setInterval(() => {
+        if (done) { clearInterval(poll); return; }
+
+        if (hasInvalidNumberModal()) {
+          LOG("Número inválido detectado.");
+          clearInterval(poll);
+          finish("ERRO");
+          return;
+        }
+
+        const btn = findSendButton();
+        if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+          clearInterval(poll);
+          LOG("Clicando enviar…");
+          btn.click();
+          setTimeout(() => finish("MENSAGEM_ENVIADA"), POST_SEND_MS);
+          return;
+        }
+
+        if (Date.now() - start > DEADLINE_MS) {
+          clearInterval(poll);
+          LOG("Timeout aguardando botão.");
+          finish("ERRO");
+        }
+      }, 500);
     };
 
-    const start = Date.now();
-    const poll = setInterval(() => {
-      if (done) { clearInterval(poll); return; }
-
-      if (hasInvalidNumberModal()) {
-        LOG("Número inválido detectado.");
-        clearInterval(poll);
-        finish("ERRO");
-        return;
-      }
-
-      const btn = findSendButton();
-      if (btn && !btn.disabled) {
-        clearInterval(poll);
-        LOG("Clicando enviar…");
-        btn.click();
-        setTimeout(() => finish("MENSAGEM_ENVIADA"), POST_SEND_MS);
-        return;
-      }
-
-      if (Date.now() - start > DEADLINE_MS) {
-        clearInterval(poll);
-        LOG("Timeout aguardando botão.");
-        finish("ERRO");
-      }
-    }, 500);
-
-    // Se a URL não é de envio, não faz nada (ex.: usuário só abriu WA)
-    if (!isSendUrl()) {
-      clearInterval(poll);
-      done = true;
-    }
+    run();
+    setInterval(run, 1000);
     return;
   }
 
@@ -96,5 +112,9 @@
     const url = ev.detail?.url;
     if (!url) return;
     chrome.runtime.sendMessage({ type: "ABRIR_WHATSAPP", url });
+  });
+
+  window.addEventListener("leads-hunter-stop", (ev) => {
+    chrome.runtime.sendMessage({ type: "ENCERRAR_ROBO", close: !!ev.detail?.close });
   });
 })();
