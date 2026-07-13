@@ -54,6 +54,26 @@ export function CrmKanban() {
     retry: false,
   });
 
+  const handleDragStart = (e: React.DragEvent, leadId: number) => {
+    setDraggedLead(leadId);
+    e.dataTransfer.setData('leadId', String(leadId));
+  };
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+  const handleDrop = async (e: React.DragEvent, stageId: number) => {
+    e.preventDefault();
+    const leadId = Number(e.dataTransfer.getData('leadId'));
+    if (!leadId) return;
+    try {
+      const res = await fetch(`/api/crm_leads/${leadId}/stage`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId }),
+      });
+      if (res.ok) { toast.success('Lead movido no funil'); refetch(); }
+    } catch { toast.error('Erro ao mover lead'); }
+    setDraggedLead(null);
+  };
+
   if (isLoading || !data) {
     return (
       <div className="flex h-[calc(100vh-8rem)] gap-4 overflow-x-auto p-2 pb-6 items-start">
