@@ -31,12 +31,30 @@ export default function Index() {
   const [robotAbortController, setRobotAbortController] = useState<AbortController | null>(null);
   const [robotLimit, setRobotLimit] = useState<number>(50);
   const [robotDelay, setRobotDelay] = useState<number>(15);
+  const [robotMode, setRobotMode] = useState<'web' | 'extension'>('web');
+  const [extensionReady, setExtensionReady] = useState(false);
+  const [robotStatus, setRobotStatus] = useState('Aguardando ativação...');
+  const [robotCurrentLead, setRobotCurrentLead] = useState('');
 
   useEffect(() => {
     loadAll().then(({ leads, history }) => {
       setLeads(leads);
       setHistory(history);
     }).catch(e => console.error('load', e));
+  }, []);
+
+  useEffect(() => {
+    const detectExtension = () => setExtensionReady(!!(window as any).__LEADS_HUNTER_EXT__);
+    const onReady = () => setExtensionReady(true);
+
+    detectExtension();
+    window.addEventListener('leads-hunter-ext-ready', onReady);
+    const interval = window.setInterval(detectExtension, 1500);
+
+    return () => {
+      window.removeEventListener('leads-hunter-ext-ready', onReady);
+      window.clearInterval(interval);
+    };
   }, []);
 
   const hotLeads = leads.filter(l => l.type === 'hot').length;
@@ -125,7 +143,9 @@ export default function Index() {
     // Abortar se já rodando
     if (robotRunning) {
       if (robotAbortController) robotAbortController.abort();
+      window.dispatchEvent(new CustomEvent('leads-hunter-stop', { detail: { close: false } }));
       setRobotRunning(false);
+      setRobotStatus('Robô interrompido pelo usuário.');
       toast.info('Robô interrompido.');
       return;
     }
@@ -139,6 +159,8 @@ export default function Index() {
     setRobotAbortController(controller);
     setRobotRunning(true);
     setRobotProgressPct(0);
+    setRobotStatus('Preparando fila de disparo...');
+    setRobotCurrentLead('');
 
     let sent = 0;
     let failed = 0;
@@ -180,23 +202,54 @@ export default function Index() {
     queued = capped.length;
     setRobotCounts({ queued, sent, failed });
     const hasExt = typeof window !== 'undefined' && !!(window as any).__LEADS_HUNTER_EXT__;
+    setRobotMode(hasExt ? 'extension' : 'web');
     toast.info(
       hasExt
-        ? `Extensão detectada — disparando ${capped.length} leads em cadeia automática.`
-        : `Robô disparando ${capped.length} leads. Instale a extensão para envio 100% automático.`
+        ? `Auto-envio detectado — disparando ${capped.length} leads em uma única aba.`
+        : `Modo web ativo — abrindo ${capped.length} conversas em uma única aba.`
     );
 
-    // Fallback (sem extensão): 1 aba reutilizada. A extensão gerencia as abas sozinha.
     const TAB_NAME = 'leadshunter_wa';
     let win: Window | null = null;
+    const navigateWhatsAppTab = (url: string) => {
+      const openFromTop = () => {
+        const topWindow = window.top || window;
+        return topWindow.open(url, TAB_NAME);
+      };
+
+      try {
+        if (win && !win.closed) {
+          win.location.replace(url);
+          win.focus();
+          return win;
+        }
+      } catch (_) {
+        // Se o navegador bloquear controle cross-origin, tenta abrir/reusar via target nomeado.
+      }
+
+      try { win = openFromTop(); } catch { win = window.open(url, TAB_NAME); }
+
+      if (!win) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = TAB_NAME;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      return win;
+    };
+
     if (!hasExt) {
-      // Abrir no TOPO da janela (não dentro do iframe do preview) para evitar ERR_BLOCKED_BY_RESPONSE
-      const top = window.top || window;
-      try { win = top.open('about:blank', TAB_NAME); } catch { win = window.open('about:blank', TAB_NAME); }
+      setRobotStatus('Abrindo aba real do WhatsApp Web...');
+      try { win = (window.top || window).open('about:blank', TAB_NAME); } catch { win = window.open('about:blank', TAB_NAME); }
       if (!win) {
         toast.error('Pop-up bloqueado. Permita pop-ups deste site (ícone na barra) e tente de novo.');
         setRobotRunning(false);
         setRobotAbortController(null);
+        setRobotStatus('Pop-up bloqueado pelo navegador.');
         return;
       }
     }
@@ -234,27 +287,22 @@ export default function Index() {
 
       const cleanPhone = phone!.replace(/\D/g, '');
       const number = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-      const url = `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}&app_absent=0`;
+      const url = `https://web.whatsapp.com/send/?phone=${number}&text=${encodeURIComponent(msg)}&type=phone_number&app_absent=0`;
+      setRobotCurrentLead(lead.name);
 
       if (hasExt) {
-        // Extensão cuida da aba (abre, envia, fecha)
+        setRobotStatus(`Enviando para ${lead.name}...`);
         window.dispatchEvent(new CustomEvent('leads-hunter-open', { detail: { url } }));
         log.info(`[${i + 1}/${capped.length}] ${lead.name} — enviando via extensão…`);
-        const result = await waitForExtSignal(30000);
+        const result = await waitForExtSignal(45000);
         if (result === 'sent') { sent++; }
         else if (result === 'aborted') { break; }
         else { failed++; log.warn(`[${i + 1}/${capped.length}] ${lead.name} — ${result}`); }
       } else {
-        if (!win || win.closed) {
-          const top = window.top || window;
-          try { win = top.open(url, TAB_NAME); } catch { win = window.open(url, TAB_NAME); }
-          if (!win) { toast.error('Aba do WhatsApp foi bloqueada. Robô interrompido.'); break; }
-        } else {
-          try { win.location.href = url; } catch { win = window.open(url, TAB_NAME); }
-          try { win.focus(); } catch {}
-        }
+        setRobotStatus(`Conversa preparada para ${lead.name}. Próximo lead em ${robotDelay}s...`);
+        win = navigateWhatsAppTab(url);
         sent++;
-        log.info(`[${i + 1}/${capped.length}] ${lead.name} — aba recarregada com mensagem pronta.`);
+        log.info(`[${i + 1}/${capped.length}] ${lead.name} — WhatsApp Web recarregado com mensagem pronta.`);
       }
 
       fetch('/api/crm_leads', {
@@ -267,7 +315,10 @@ export default function Index() {
       setRobotCounts({ queued, sent, failed });
       setRobotProgressPct(((i + 1) / capped.length) * 100);
 
-      // Delay entre leads (aplica sempre — sem extensão dá tempo do Enter; com extensão evita rate-limit)
+      if (i < capped.length - 1) {
+        setRobotStatus(hasExt ? `Aguardando ${robotDelay}s para o próximo envio...` : `Aguardando ${robotDelay}s para recarregar o próximo lead...`);
+      }
+
       await new Promise<void>(resolve => {
         const t = setTimeout(resolve, robotDelay * 1000);
         controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
@@ -277,9 +328,11 @@ export default function Index() {
 
     setRobotRunning(false);
     setRobotAbortController(null);
+    setRobotCurrentLead('');
     if (!controller.signal.aborted) {
-      toast.success(`Disparo concluído! ${sent} conversas abertas (limite ${robotLimit}).`);
-      log.success(`Robô finalizado: ${sent} conversas abertas em uma única aba.`);
+      setRobotStatus(hasExt ? `Concluído: ${sent} mensagens enviadas.` : `Concluído: ${sent} conversas preparadas no WhatsApp Web.`);
+      toast.success(hasExt ? `Disparo concluído! ${sent} mensagens enviadas.` : `Fila concluída! ${sent} conversas preparadas.`);
+      log.success(hasExt ? `Robô finalizado: ${sent} mensagens enviadas em uma única aba.` : `Robô finalizado: ${sent} conversas preparadas em uma única aba.`);
     }
   };
 
@@ -362,8 +415,19 @@ export default function Index() {
                           <div>
                             <p className="text-sm font-semibold text-foreground">Automação de Navegador (1 aba só)</p>
                             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              Abre <strong>uma única aba</strong> do WhatsApp Web e vai recarregando ela com cada lead da fila, sem parar, até atingir o limite escolhido.
+                              Funciona direto no web abrindo <strong>uma única aba</strong> do WhatsApp Web e recarregando cada lead da fila. Com auto-envio ativo, também clica em Enviar sozinho.
                             </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className={`rounded-lg border px-3 py-2 ${extensionReady ? 'border-success/30 bg-success/10 text-success' : 'border-border bg-muted/30 text-muted-foreground'}`}>
+                            <p className="font-bold">{extensionReady ? 'Auto-envio ativo' : 'Modo web ativo'}</p>
+                            <p className="mt-0.5">{extensionReady ? 'Envia e avança sozinho.' : 'Recarrega a aba em sequência.'}</p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground">
+                            <p className="font-bold text-foreground">Fila contínua</p>
+                            <p className="mt-0.5">Para só no limite escolhido.</p>
                           </div>
                         </div>
 
@@ -436,7 +500,7 @@ export default function Index() {
                           <p>2. Abra <code className="bg-background px-1 rounded">chrome://extensions</code> no Chrome/Edge/Brave.</p>
                           <p>3. Ative o <strong>Modo desenvolvedor</strong> (canto superior direito).</p>
                           <p>4. Clique em <strong>Carregar sem compactação</strong> e selecione a pasta descompactada.</p>
-                          <p>5. Pronto — o robô envia sozinho. <strong>Não feche</strong> a aba do WhatsApp Web durante o disparo.</p>
+                          <p>5. Recarregue esta página. O modo web continua funcionando mesmo sem extensão; a extensão só libera o clique automático.</p>
                         </div>
                       </div>
 
@@ -445,13 +509,18 @@ export default function Index() {
                         <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-3">Status do Robô</p>
 
                         {!robotRunning && robotProgressPct === 0 && (
-                          <div className="text-center text-sm text-muted-foreground/50 italic py-4">
-                            Aguardando ativação...
+                          <div className="text-center text-sm text-muted-foreground/70 py-4">
+                            {robotStatus}
                           </div>
                         )}
 
                         {(robotRunning || robotProgressPct > 0) && (
                           <div className="space-y-3">
+                            <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{robotMode === 'extension' ? 'Auto-envio' : 'Modo Web'}</p>
+                              <p className="text-xs font-semibold text-foreground mt-1">{robotStatus}</p>
+                              {robotCurrentLead && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">Lead atual: {robotCurrentLead}</p>}
+                            </div>
                             <div>
                               <div className="flex justify-between text-xs font-medium mb-1.5">
                                 <span className="text-muted-foreground">Progresso</span>
@@ -467,7 +536,7 @@ export default function Index() {
                             <div className="grid grid-cols-3 gap-2 text-center">
                               <div className="bg-success/10 border border-success/20 rounded-lg px-2 py-1.5">
                                 <p className="text-base font-bold text-success">{robotCounts.sent}</p>
-                                <p className="text-[10px] text-muted-foreground">Abertos</p>
+                                <p className="text-[10px] text-muted-foreground">{robotMode === 'extension' ? 'Enviados' : 'Preparados'}</p>
                               </div>
                               <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-1.5">
                                 <p className="text-base font-bold text-red-400">{robotCounts.failed}</p>
