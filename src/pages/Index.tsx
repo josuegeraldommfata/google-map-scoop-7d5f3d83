@@ -179,17 +179,46 @@ export default function Index() {
     const capped = eligibleLeads.slice(0, robotLimit);
     queued = capped.length;
     setRobotCounts({ queued, sent, failed });
-    toast.info(`Robô disparando para ${capped.length} leads em uma única aba (recarregando a cada ${robotDelay}s).`);
+    const hasExt = typeof window !== 'undefined' && !!(window as any).__LEADS_HUNTER_EXT__;
+    toast.info(
+      hasExt
+        ? `Extensão detectada — disparando ${capped.length} leads em cadeia automática.`
+        : `Robô disparando ${capped.length} leads. Instale a extensão para envio 100% automático.`
+    );
 
-    // Abrir UMA única aba reutilizada
+    // Fallback (sem extensão): 1 aba reutilizada. A extensão gerencia as abas sozinha.
     const TAB_NAME = 'leadshunter_wa';
-    let win: Window | null = window.open('about:blank', TAB_NAME);
-    if (!win) {
-      toast.error('Bloqueador de pop-up impediu abrir a aba. Permita pop-ups deste site e tente novamente.');
-      setRobotRunning(false);
-      setRobotAbortController(null);
-      return;
+    let win: Window | null = null;
+    if (!hasExt) {
+      // Abrir no TOPO da janela (não dentro do iframe do preview) para evitar ERR_BLOCKED_BY_RESPONSE
+      const top = window.top || window;
+      try { win = top.open('about:blank', TAB_NAME); } catch { win = window.open('about:blank', TAB_NAME); }
+      if (!win) {
+        toast.error('Pop-up bloqueado. Permita pop-ups deste site (ícone na barra) e tente de novo.');
+        setRobotRunning(false);
+        setRobotAbortController(null);
+        return;
+      }
     }
+
+    const waitForExtSignal = (timeoutMs: number) => new Promise<'sent'|'error'|'timeout'|'aborted'>(resolve => {
+      let done = false;
+      const finish = (r: 'sent'|'error'|'timeout'|'aborted') => {
+        if (done) return; done = true;
+        window.removeEventListener('leads-hunter-next', onNext as any);
+        controller.signal.removeEventListener('abort', onAbort);
+        clearTimeout(t);
+        resolve(r);
+      };
+      const onNext = (ev: any) => {
+        const status = ev?.detail?.status;
+        finish(status === 'sent' ? 'sent' : 'error');
+      };
+      const onAbort = () => finish('aborted');
+      const t = setTimeout(() => finish('timeout'), timeoutMs);
+      window.addEventListener('leads-hunter-next', onNext as any);
+      controller.signal.addEventListener('abort', onAbort);
+    });
 
     for (let i = 0; i < capped.length; i++) {
       if (controller.signal.aborted) break;
@@ -207,16 +236,25 @@ export default function Index() {
       const number = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
       const url = `https://web.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(msg)}&app_absent=0`;
 
-      // Se o usuário fechou a aba, reabrir na mesma "named window"
-      if (!win || win.closed) {
-        win = window.open(url, TAB_NAME);
-        if (!win) {
-          toast.error('Aba do WhatsApp foi bloqueada. Robô interrompido.');
-          break;
-        }
+      if (hasExt) {
+        // Extensão cuida da aba (abre, envia, fecha)
+        window.dispatchEvent(new CustomEvent('leads-hunter-open', { detail: { url } }));
+        log.info(`[${i + 1}/${capped.length}] ${lead.name} — enviando via extensão…`);
+        const result = await waitForExtSignal(30000);
+        if (result === 'sent') { sent++; }
+        else if (result === 'aborted') { break; }
+        else { failed++; log.warn(`[${i + 1}/${capped.length}] ${lead.name} — ${result}`); }
       } else {
-        try { win.location.href = url; } catch { win = window.open(url, TAB_NAME); }
-        try { win.focus(); } catch {}
+        if (!win || win.closed) {
+          const top = window.top || window;
+          try { win = top.open(url, TAB_NAME); } catch { win = window.open(url, TAB_NAME); }
+          if (!win) { toast.error('Aba do WhatsApp foi bloqueada. Robô interrompido.'); break; }
+        } else {
+          try { win.location.href = url; } catch { win = window.open(url, TAB_NAME); }
+          try { win.focus(); } catch {}
+        }
+        sent++;
+        log.info(`[${i + 1}/${capped.length}] ${lead.name} — aba recarregada com mensagem pronta.`);
       }
 
       fetch('/api/crm_leads', {
@@ -225,18 +263,17 @@ export default function Index() {
         body: JSON.stringify({ lead, stageId: 2 }),
       }).catch(() => {});
 
-      sent++;
-      queued--;
+      queued = capped.length - (i + 1);
       setRobotCounts({ queued, sent, failed });
       setRobotProgressPct(((i + 1) / capped.length) * 100);
-      log.info(`[${i + 1}/${capped.length}] ${lead.name} — aba recarregada com mensagem pronta.`);
 
-      // Aguardar tempo configurado para o usuário (ou extensão) apertar Enter
+      // Delay entre leads (aplica sempre — sem extensão dá tempo do Enter; com extensão evita rate-limit)
       await new Promise<void>(resolve => {
         const t = setTimeout(resolve, robotDelay * 1000);
         controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
       });
     }
+
 
     setRobotRunning(false);
     setRobotAbortController(null);
