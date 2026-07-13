@@ -29,10 +29,16 @@ export function MetricsView({ leads }: Props) {
 
   if (!leads.length) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-16 text-center">
-        <BarChartIcon />
-        <h3 className="font-display text-2xl mt-4 mb-2">Sem dados ainda</h3>
-        <p className="text-sm text-muted-foreground">Faça uma busca para ver suas métricas aparecerem aqui.</p>
+      <div className="rounded-3xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-16 text-center shadow-elev relative overflow-hidden">
+        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-16 -left-16 w-64 h-64 rounded-full bg-success/10 blur-3xl" />
+        <div className="relative">
+          <div className="inline-flex p-4 rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+            <TrendingUp className="w-10 h-10 text-primary" />
+          </div>
+          <h3 className="font-display text-3xl mt-5 mb-2 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">Suas métricas vão brilhar aqui</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Rode uma busca no painel e voltamos com KPIs, top cidades e composição por nicho em tempo real.</p>
+        </div>
       </div>
     );
   }
