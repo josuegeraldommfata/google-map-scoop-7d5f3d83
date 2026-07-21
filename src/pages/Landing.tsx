@@ -402,74 +402,15 @@ export default function Landing() {
         </section>
 
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-10">
-          <SectionTitle kicker="Depoimentos" title="Quem usa, sente a diferença" />
-
-          <div className="mt-8">
-            <div className="relative">
-              <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/60">
-                <div
-                  className="flex transition-transform duration-700 ease-in-out"
-                  style={{ width: `${testimonials.length * 100}%`, animation: "none" }}
-                >
-                  {Array.from({ length: Math.ceil(testimonials.length / 3) }).map((_, groupIndex) => {
-                    const start = groupIndex * 3;
-                    const chunk = testimonials.slice(start, start + 3);
-                    return (
-                      <div
-                        key={groupIndex}
-                        className="w-full flex-none"
-                        style={{ width: `${100 / Math.ceil(testimonials.length / 3)}%` }}
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
-                          {chunk.map((t) => (
-                            <Card key={t.name} className="p-6 bg-card/70">
-                              <div className="flex items-center gap-2">
-                                <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 overflow-hidden shrink-0">
-                                  {t.photoUrl ? (
-                                    <img
-                                      src={t.photoUrl}
-                                      alt={`Foto de ${t.name}`}
-                                      className="w-full h-full object-cover"
-                                      loading="eager"
-                                      onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null}
-                                </div>
-                                <div>
-                                  <p className="font-medium">{t.name}</p>
-                                  <p className="text-xs text-muted-foreground">{t.role}</p>
-                                </div>
-                              </div>
-                              <div className="mt-4 flex items-center gap-1">
-                                {Array.from({ length: t.stars }).map((_, i) => (
-                                  <Star key={i} className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                                ))}
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-3">“{t.quote}”</p>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Indícios (dots) + auto-slide via CSS keyframes */}
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(testimonials.length / 3) }).map((_, i) => (
-                  <span
-                    key={i}
-                    className="w-2.5 h-2.5 rounded-full bg-muted/60"
-                    style={{ opacity: i === 0 ? 1 : 0.45 }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
+          <SectionTitle
+            kicker="Depoimentos"
+            title="30 pessoas reais, mesma conclusão"
+            subtitle="Profissionais autônomos, clínicas, escritórios e agências que trocaram a prospecção manual pelo Leads Hunter."
+          />
+          <TestimonialsCarousel testimonials={testimonials} reducedMotion={reducedMotion} />
         </section>
+
+
 
 
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-14">
