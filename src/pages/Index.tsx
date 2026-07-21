@@ -77,12 +77,12 @@ export default function Index() {
 
       const localEntry: SearchHistory = {
         id: Math.random().toString(36).slice(2),
-        query, leadsFound: newLeads.length, hotLeads: hot, coldLeads: cold,
+        query: effectiveQuery, leadsFound: newLeads.length, hotLeads: hot, coldLeads: cold,
         executedAt: new Date().toISOString(),
       };
       setHistory(prev => [localEntry, ...prev]);
 
-      saveSearch(query, newLeads).catch(e => console.error('save', e));
+      saveSearch(effectiveQuery, newLeads).catch(e => console.error('save', e));
     } catch (e) {
       console.error('Erro na busca:', e);
       log.error(`Falha na busca: ${(e as Error)?.message || e}`);
