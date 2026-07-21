@@ -18,6 +18,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { setPlan } from "@/lib/plan";
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -229,10 +230,9 @@ export default function Landing() {
 
   const onPickPlan = async (key: Plan["key"]) => {
     setLoading(key);
-    // Simulação de checkout.
-    await new Promise((r) => setTimeout(r, 900));
+    setPlan(key);
+    await new Promise((r) => setTimeout(r, 700));
     setLoading(null);
-    // Redireciona para login/cadastro (ainda será implementado).
     navigate("/auth/register", { state: { plan: key } });
   };
 
