@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
 import { SearchForm } from "@/components/SearchForm";
-import { StatsCards } from "@/components/StatsCards";
 import { LeadsTable } from "@/components/LeadsTable";
 import { SearchHistoryPanel } from "@/components/SearchHistoryPanel";
 import { MetricsView } from "@/components/MetricsView";
@@ -24,18 +23,6 @@ export default function Index() {
   const [isSearching, setIsSearching] = useState(false);
   const [view, setView] = useState<View>('search');
 
-  // Robô client-side state
-  const [robotRunning, setRobotRunning] = useState(false);
-  const [robotProgressPct, setRobotProgressPct] = useState(0);
-  const [robotCounts, setRobotCounts] = useState({ queued: 0, sent: 0, failed: 0 });
-  const [robotAbortController, setRobotAbortController] = useState<AbortController | null>(null);
-  const [robotLimit, setRobotLimit] = useState<number>(50);
-  const [robotDelay, setRobotDelay] = useState<number>(15);
-  const [robotMode, setRobotMode] = useState<'web' | 'extension'>('web');
-  const [extensionReady, setExtensionReady] = useState(false);
-  const [robotStatus, setRobotStatus] = useState('Aguardando ativação...');
-  const [robotCurrentLead, setRobotCurrentLead] = useState('');
-
   useEffect(() => {
     loadAll().then(({ leads, history }) => {
       setLeads(leads);
@@ -43,22 +30,7 @@ export default function Index() {
     }).catch(e => console.error('load', e));
   }, []);
 
-  useEffect(() => {
-    const detectExtension = () => setExtensionReady(!!(window as any).__LEADS_HUNTER_EXT__);
-    const onReady = () => setExtensionReady(true);
-
-    detectExtension();
-    window.addEventListener('leads-hunter-ext-ready', onReady);
-    const interval = window.setInterval(detectExtension, 1500);
-
-    return () => {
-      window.removeEventListener('leads-hunter-ext-ready', onReady);
-      window.clearInterval(interval);
-    };
-  }, []);
-
   const hotLeads = leads.filter(l => l.type === 'hot').length;
-  const coldLeads = leads.filter(l => l.type === 'cold').length;
 
   const handleSearch = useCallback(async (query: SearchQuery) => {
     setIsSearching(true);
@@ -111,25 +83,6 @@ export default function Index() {
     }
   }, []);
 
-  const handleClearScreen = () => {
-    if (leads.length === 0) {
-      log.warn("Tela já está vazia — nada para arquivar.");
-      return;
-    }
-    const hot = leads.filter(l => l.type === 'hot').length;
-    const cold = leads.filter(l => l.type === 'cold').length;
-    const entry: SearchHistory = {
-      id: 'arch_' + Math.random().toString(36).slice(2),
-      query: { niche: '(lote arquivado)', keywords: [], cities: ['—'], state: '—', quantity: leads.length },
-      leadsFound: leads.length, hotLeads: hot, coldLeads: cold,
-      executedAt: new Date().toISOString(),
-    };
-    setHistory(prev => [entry, ...prev]);
-    log.success(`${leads.length} leads movidos para o histórico (mock) · tela limpa.`);
-    setLeads([]);
-    toast.success("Tela limpa. Leads enviados ao histórico.");
-  };
-
   const handleClear = async () => {
     if (!confirm('Apagar todos os leads e histórico salvos desta sessão?')) return;
     await clearAll();
@@ -137,203 +90,6 @@ export default function Index() {
     setHistory([]);
     log.warn("Sessão totalmente limpa (leads + histórico apagados).");
     toast.success('Dados limpos.');
-  };
-
-  const handleActivateRobot = async () => {
-    // Abortar se já rodando
-    if (robotRunning) {
-      if (robotAbortController) robotAbortController.abort();
-      window.dispatchEvent(new CustomEvent('leads-hunter-stop', { detail: { close: false } }));
-      setRobotRunning(false);
-      setRobotStatus('Robô interrompido pelo usuário.');
-      toast.info('Robô interrompido.');
-      return;
-    }
-
-    if (leads.length === 0) {
-      toast.warning('Nenhum lead na tela para disparar.');
-      return;
-    }
-
-    const controller = new AbortController();
-    setRobotAbortController(controller);
-    setRobotRunning(true);
-    setRobotProgressPct(0);
-    setRobotStatus('Preparando fila de disparo...');
-    setRobotCurrentLead('');
-
-    let sent = 0;
-    let failed = 0;
-    let queued = leads.length;
-    setRobotCounts({ queued, sent, failed });
-
-    const template = localStorage.getItem('leadshunter_template') ||
-      'Olá {nome_empresa}, vi que vocês ainda não têm um site e gostaríamos de te apresentar nossa solução.';
-
-    // Filtrar apenas leads com celular (WhatsApp potencial)
-    // Telefones fixos (começam com 2,3,4 no DDD+número) são pulados
-    const isMobilePhone = (p: string) => {
-      const digits = p.replace(/\D/g, '');
-      // Formato BR: com 55 = 55DD9XXXXXXXX (13 dígitos), sem 55 = DD9XXXXXXXX (11 dígitos)
-      const local = digits.startsWith('55') ? digits.slice(2) : digits;
-      // Celular: 9º dígito é 9 após DDD (2 dígitos)
-      return local.length >= 10 && local[2] === '9';
-    };
-
-    const eligibleLeads = leads.filter(l => {
-      const p = l.whatsapp || l.phone;
-      return p && isMobilePhone(p);
-    });
-
-    const skipped = leads.length - eligibleLeads.length;
-    if (skipped > 0) {
-      toast.info(`${skipped} leads sem celular serão ignorados (fixos ou sem número).`);
-    }
-
-    if (eligibleLeads.length === 0) {
-      toast.warning('Nenhum lead com número de celular encontrado.');
-      setRobotRunning(false);
-      setRobotAbortController(null);
-      return;
-    }
-
-    // Aplicar limite escolhido (50/100/300/450/500)
-    const capped = eligibleLeads.slice(0, robotLimit);
-    queued = capped.length;
-    setRobotCounts({ queued, sent, failed });
-    const hasExt = typeof window !== 'undefined' && !!(window as any).__LEADS_HUNTER_EXT__;
-    setRobotMode(hasExt ? 'extension' : 'web');
-    toast.info(
-      hasExt
-        ? `Auto-envio detectado — disparando ${capped.length} leads em uma única aba.`
-        : `Modo web ativo — abrindo ${capped.length} conversas em uma única aba.`
-    );
-
-    const TAB_NAME = 'leadshunter_wa';
-    let win: Window | null = null;
-    const navigateWhatsAppTab = (url: string) => {
-      const openFromTop = () => {
-        const topWindow = window.top || window;
-        return topWindow.open(url, TAB_NAME);
-      };
-
-      try {
-        if (win && !win.closed) {
-          win.location.replace(url);
-          win.focus();
-          return win;
-        }
-      } catch (_) {
-        // Se o navegador bloquear controle cross-origin, tenta abrir/reusar via target nomeado.
-      }
-
-      try { win = openFromTop(); } catch { win = window.open(url, TAB_NAME); }
-
-      if (!win) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = TAB_NAME;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-
-      return win;
-    };
-
-    if (!hasExt) {
-      setRobotStatus('Abrindo aba real do WhatsApp Web...');
-      try { win = (window.top || window).open('about:blank', TAB_NAME); } catch { win = window.open('about:blank', TAB_NAME); }
-      if (!win) {
-        toast.error('Pop-up bloqueado. Permita pop-ups deste site (ícone na barra) e tente de novo.');
-        setRobotRunning(false);
-        setRobotAbortController(null);
-        setRobotStatus('Pop-up bloqueado pelo navegador.');
-        return;
-      }
-    }
-
-    const waitForExtSignal = (timeoutMs: number) => new Promise<'sent'|'error'|'timeout'|'aborted'>(resolve => {
-      let done = false;
-      const finish = (r: 'sent'|'error'|'timeout'|'aborted') => {
-        if (done) return; done = true;
-        window.removeEventListener('leads-hunter-next', onNext as any);
-        controller.signal.removeEventListener('abort', onAbort);
-        clearTimeout(t);
-        resolve(r);
-      };
-      const onNext = (ev: any) => {
-        const status = ev?.detail?.status;
-        finish(status === 'sent' ? 'sent' : 'error');
-      };
-      const onAbort = () => finish('aborted');
-      const t = setTimeout(() => finish('timeout'), timeoutMs);
-      window.addEventListener('leads-hunter-next', onNext as any);
-      controller.signal.addEventListener('abort', onAbort);
-    });
-
-    for (let i = 0; i < capped.length; i++) {
-      if (controller.signal.aborted) break;
-
-      const lead = capped[i];
-      const phone = lead.whatsapp || lead.phone;
-
-      const msg = template
-        .replace(/{nome_empresa}/g, lead.name)
-        .replace(/{cidade}/g, lead.city)
-        .replace(/{ramo}/g, lead.niche || 'seu ramo')
-        .replace(/{telefone}/g, phone!);
-
-      const cleanPhone = phone!.replace(/\D/g, '');
-      const number = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-      const url = `https://web.whatsapp.com/send/?phone=${number}&text=${encodeURIComponent(msg)}&type=phone_number&app_absent=0`;
-      setRobotCurrentLead(lead.name);
-
-      if (hasExt) {
-        setRobotStatus(`Enviando para ${lead.name}...`);
-        window.dispatchEvent(new CustomEvent('leads-hunter-open', { detail: { url } }));
-        log.info(`[${i + 1}/${capped.length}] ${lead.name} — enviando via extensão…`);
-        const result = await waitForExtSignal(45000);
-        if (result === 'sent') { sent++; }
-        else if (result === 'aborted') { break; }
-        else { failed++; log.warn(`[${i + 1}/${capped.length}] ${lead.name} — ${result}`); }
-      } else {
-        setRobotStatus(`Conversa preparada para ${lead.name}. Próximo lead em ${robotDelay}s...`);
-        win = navigateWhatsAppTab(url);
-        sent++;
-        log.info(`[${i + 1}/${capped.length}] ${lead.name} — WhatsApp Web recarregado com mensagem pronta.`);
-      }
-
-      fetch('/api/crm_leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead, stageId: 2 }),
-      }).catch(() => {});
-
-      queued = capped.length - (i + 1);
-      setRobotCounts({ queued, sent, failed });
-      setRobotProgressPct(((i + 1) / capped.length) * 100);
-
-      if (i < capped.length - 1) {
-        setRobotStatus(hasExt ? `Aguardando ${robotDelay}s para o próximo envio...` : `Aguardando ${robotDelay}s para recarregar o próximo lead...`);
-      }
-
-      await new Promise<void>(resolve => {
-        const t = setTimeout(resolve, robotDelay * 1000);
-        controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
-      });
-    }
-
-
-    setRobotRunning(false);
-    setRobotAbortController(null);
-    setRobotCurrentLead('');
-    if (!controller.signal.aborted) {
-      setRobotStatus(hasExt ? `Concluído: ${sent} mensagens enviadas.` : `Concluído: ${sent} conversas preparadas no WhatsApp Web.`);
-      toast.success(hasExt ? `Disparo concluído! ${sent} mensagens enviadas.` : `Fila concluída! ${sent} conversas preparadas.`);
-      log.success(hasExt ? `Robô finalizado: ${sent} mensagens enviadas em uma única aba.` : `Robô finalizado: ${sent} conversas preparadas em uma única aba.`);
-    }
   };
 
   return (
@@ -379,7 +135,7 @@ export default function Index() {
                           <br /> em segundos.
                         </h2>
                         <p className="text-sm text-muted-foreground mt-3 max-w-md">
-                          Busque por nicho, cidade e estado. Capturamos nome, telefone, WhatsApp verificado, Instagram e site — direto da fonte.
+                          Busque por nicho, cidade e estado. Capturamos nome, telefone, WhatsApp, Instagram e site — exporte a lista ou dispare individualmente pelo WhatsApp.
                         </p>
                       </div>
                       <div className="grid grid-cols-3 gap-6 text-center">
@@ -393,165 +149,6 @@ export default function Index() {
                   <SearchForm onSearch={handleSearch} isSearching={isSearching} />
 
                   <SearchConsole />
-
-                  {/* Plano 2 · Robô Client-Side */}
-                  <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                      <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                        Plano 2 · Robô em Massa
-                      </p>
-                      <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2.5 py-1 rounded-full">
-                        ⭐ Exclusivo Business
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* Esquerda */}
-                      <div className="space-y-4">
-                        <div className="flex items-start gap-3">
-                          <span className="mt-0.5 flex-shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl bg-primary/15 border border-primary/30">
-                            <Zap className="w-4 h-4 text-primary" />
-                          </span>
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">Automação de Navegador (1 aba só)</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              Funciona direto no web abrindo <strong>uma única aba</strong> do WhatsApp Web e recarregando cada lead da fila. Com auto-envio ativo, também clica em Enviar sozinho.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-[11px]">
-                          <div className={`rounded-lg border px-3 py-2 ${extensionReady ? 'border-success/30 bg-success/10 text-success' : 'border-border bg-muted/30 text-muted-foreground'}`}>
-                            <p className="font-bold">{extensionReady ? 'Auto-envio ativo' : 'Modo web ativo'}</p>
-                            <p className="mt-0.5">{extensionReady ? 'Envia e avança sozinho.' : 'Recarrega a aba em sequência.'}</p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground">
-                            <p className="font-bold text-foreground">Fila contínua</p>
-                            <p className="mt-0.5">Para só no limite escolhido.</p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Limite de conversas</span>
-                            <select
-                              value={robotLimit}
-                              onChange={(e) => setRobotLimit(Number(e.target.value))}
-                              disabled={robotRunning}
-                              className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium"
-                            >
-                              {[50, 100, 300, 450, 500].map(n => (
-                                <option key={n} value={n}>{n} conversas</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Intervalo entre leads</span>
-                            <select
-                              value={robotDelay}
-                              onChange={(e) => setRobotDelay(Number(e.target.value))}
-                              disabled={robotRunning}
-                              className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium"
-                            >
-                              {[8, 12, 15, 20, 30, 45, 60].map(n => (
-                                <option key={n} value={n}>{n}s</option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={leads.length === 0}
-                          className={`w-full px-5 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                            robotRunning
-                              ? 'bg-red-500/15 text-red-400 border border-red-500/40 hover:bg-red-500/25'
-                              : 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm'
-                          } disabled:opacity-40 disabled:cursor-not-allowed`}
-                          onClick={handleActivateRobot}
-                        >
-                          <Zap className="w-4 h-4" />
-                          {robotRunning ? '⛔ Parar Robô' : `Ativar Robô · ${robotLimit} conversas`}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fetch('/leads-hunter-extension.zip')
-                              .then(r => { if (!r.ok) throw new Error('Falha ao baixar'); return r.blob(); })
-                              .then(blob => {
-                                const a = document.createElement('a');
-                                a.href = URL.createObjectURL(blob);
-                                a.download = 'leads-hunter-extension.zip';
-                                a.click();
-                                URL.revokeObjectURL(a.href);
-                                toast.success('Extensão baixada! Siga as instruções abaixo.');
-                              })
-                              .catch(e => toast.error(e.message));
-                          }}
-                          className="w-full px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-500 border border-emerald-500/40 hover:bg-emerald-500/25 transition-colors flex items-center justify-center gap-2"
-                        >
-                          ⬇ Baixar Extensão de Auto-Envio (.zip)
-                        </button>
-
-                        <div className="text-[10px] text-muted-foreground leading-relaxed space-y-1 rounded-lg bg-muted/30 border border-border p-2">
-                          <p><strong>📦 Como instalar (1 minuto):</strong></p>
-                          <p>1. Descompacte o .zip baixado.</p>
-                          <p>2. Abra <code className="bg-background px-1 rounded">chrome://extensions</code> no Chrome/Edge/Brave.</p>
-                          <p>3. Ative o <strong>Modo desenvolvedor</strong> (canto superior direito).</p>
-                          <p>4. Clique em <strong>Carregar sem compactação</strong> e selecione a pasta descompactada.</p>
-                          <p>5. Recarregue esta página. O modo web continua funcionando mesmo sem extensão; a extensão só libera o clique automático.</p>
-                        </div>
-                      </div>
-
-                      {/* Direita: status */}
-                      <div className="rounded-xl border border-border bg-muted/20 p-4 flex flex-col justify-center min-h-[140px]">
-                        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-3">Status do Robô</p>
-
-                        {!robotRunning && robotProgressPct === 0 && (
-                          <div className="text-center text-sm text-muted-foreground/70 py-4">
-                            {robotStatus}
-                          </div>
-                        )}
-
-                        {(robotRunning || robotProgressPct > 0) && (
-                          <div className="space-y-3">
-                            <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{robotMode === 'extension' ? 'Auto-envio' : 'Modo Web'}</p>
-                              <p className="text-xs font-semibold text-foreground mt-1">{robotStatus}</p>
-                              {robotCurrentLead && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">Lead atual: {robotCurrentLead}</p>}
-                            </div>
-                            <div>
-                              <div className="flex justify-between text-xs font-medium mb-1.5">
-                                <span className="text-muted-foreground">Progresso</span>
-                                <span className="text-foreground font-bold">{robotProgressPct.toFixed(0)}%</span>
-                              </div>
-                              <div className="h-2.5 w-full bg-border rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-gradient-to-r from-primary to-success rounded-full transition-all duration-500 ease-out"
-                                  style={{ width: `${Math.max(0, Math.min(100, robotProgressPct))}%` }}
-                                />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 text-center">
-                              <div className="bg-success/10 border border-success/20 rounded-lg px-2 py-1.5">
-                                <p className="text-base font-bold text-success">{robotCounts.sent}</p>
-                                <p className="text-[10px] text-muted-foreground">{robotMode === 'extension' ? 'Enviados' : 'Preparados'}</p>
-                              </div>
-                              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-1.5">
-                                <p className="text-base font-bold text-red-400">{robotCounts.failed}</p>
-                                <p className="text-[10px] text-muted-foreground">Sem WA</p>
-                              </div>
-                              <div className="bg-muted border border-border rounded-lg px-2 py-1.5">
-                                <p className="text-base font-bold text-foreground">{robotCounts.queued}</p>
-                                <p className="text-[10px] text-muted-foreground">Na Fila</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
 
                   <LeadsTable leads={leads} />
                 </>

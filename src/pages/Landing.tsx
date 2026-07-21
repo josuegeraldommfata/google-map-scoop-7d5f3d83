@@ -47,10 +47,10 @@ const plans: Plan[] = [
     price: "R$ 80,00 / mês",
     tagline: "Prospecção inteligente, sem complicação.",
     bullets: [
-      "Até 349 leads por campanha (mock/estimativa)",
-      "Envio em lote no Plano 2 (Robô)",
-      "Templates e limites de caracteres",
-      "Relatórios básicos e histórico de buscas",
+      "3 pesquisas por dia · até 300 leads por pesquisa",
+      "Exportação da lista em CSV",
+      "Disparo individual pelo WhatsApp (clique a clique)",
+      "Histórico de buscas e relatórios básicos",
       "Suporte por e-mail",
     ],
   },
@@ -61,11 +61,11 @@ const plans: Plan[] = [
     tagline: "Para quem precisa de volume e velocidade.",
     highlight: true,
     bullets: [
-      "Volume maior e priorização de fila (mock/estimativa)",
-      "Qualificação extra e regras de envio",
-      "Mais controle de mensagens e cadência",
-      "Suporte prioritário",
-      "Relatórios avançados (mock/estimativa)",
+      "Pesquisas ilimitadas · até 500 leads por pesquisa por dia",
+      "Exportação avançada (CSV completo com Instagram e site)",
+      "Disparo individual pelo WhatsApp otimizado",
+      "Enriquecimento extra (Instagram, e-mail, site)",
+      "Relatórios avançados e suporte prioritário",
     ],
   },
 ];
@@ -208,20 +208,20 @@ export default function Landing() {
     () =>
       [
         {
-          q: "O que é o Plano 2 (Robô)?",
-          a: "É o envio em lote com QR e sessão do WhatsApp via backend. No mock, a interface funciona para você validar fluxo — depois conectamos à Evolution API.",
+          q: "Como funcionam os limites de busca?",
+          a: "Standard tem 3 pesquisas por dia com até 300 leads cada. Business tem pesquisas ilimitadas com até 500 leads por pesquisa por dia.",
         },
         {
-          q: "Como funciona o envio de mensagem?",
-          a: "Você configura um template e o sistema monta a proposta por lead com limite de caracteres (clamp) para evitar mensagens truncadas ou ruins.",
+          q: "Como envio mensagem pelos leads?",
+          a: "Cada lead tem um botão de WhatsApp que abre a conversa com uma mensagem pronta e persuasiva já preenchida. Você revisa e envia.",
         },
         {
-          q: "Tem risco de eu perder lead?",
-          a: "Não. O sistema registra status por campanha (e depois persistimos no banco). A lógica é pensada para reduzir conversas perdidas.",
+          q: "Consigo exportar os leads?",
+          a: "Sim. Exporta a lista completa em CSV a qualquer momento — nome, telefone, WhatsApp, Instagram, site e classificação.",
         },
         {
           q: "Por que 2 dias grátis?",
-          a: "Porque você precisa sentir o valor: rodar uma busca, validar a qualidade do lead e testar o fluxo do Robô sem compromisso.",
+          a: "Para você rodar uma busca real, validar a qualidade dos leads e sentir o valor sem compromisso.",
         },
       ] as const,
     []
@@ -275,14 +275,13 @@ export default function Landing() {
             <div className="lg:col-span-7">
               <Badge className="gap-2 mb-4" variant="secondary">
                 <Sparkles className="w-3.5 h-3.5" />
-                2 dias GRÁTIS para você validar o fluxo do Robô
+                2 dias GRÁTIS para você validar seus leads
               </Badge>
               <h1 className="font-display text-4xl sm:text-5xl leading-[1.05] text-foreground">
-                Prospecção com WhatsApp em lote — sem perder lead.
+                Leads reais do Google Maps — prontos pra prospectar.
               </h1>
               <p className="text-muted-foreground mt-4 max-w-xl">
-                Busque por nicho e cidade no Google Maps, obtenha leads enriquecidos e envie mensagens com templates e limite inteligente de caracteres.
-                Depois, ative o Plano 2 (Robô) para rodar no backend.
+                Busque por nicho e cidade, receba leads enriquecidos com WhatsApp, Instagram e site. Exporte em CSV ou dispare individualmente pelo WhatsApp com mensagem persuasiva pronta.
               </p>
 
               <div className="mt-6 flex flex-col sm:flex-row gap-3">
@@ -299,7 +298,7 @@ export default function Landing() {
               </div>
 
               <div className="mt-8 grid sm:grid-cols-2 gap-4">
-                {[{ icon: Zap, t: "Rapidez", d: "Busca e enriquecimento em minutos." }, { icon: ShieldCheck, t: "Qualidade", d: "WhatsApp e site quando disponíveis." }, { icon: Clock, t: "Sem pausa", d: "Robô roda no backend." }, { icon: Globe, t: "Brasil", d: "Foco em leads reais por nicho." }].map(
+                {[{ icon: Zap, t: "Rapidez", d: "Busca e enriquecimento em minutos." }, { icon: ShieldCheck, t: "Qualidade", d: "WhatsApp e site quando disponíveis." }, { icon: Clock, t: "Exportação", d: "CSV completo em 1 clique." }, { icon: Globe, t: "Brasil", d: "Foco em leads reais por nicho." }].map(
                   ({ icon: Icon, t, d }) => (
                     <Card key={t} className="p-4 bg-card/70">
                       <div className="flex items-start gap-3">
@@ -331,7 +330,7 @@ export default function Landing() {
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {["Rodar uma busca", "Ver leads enriquecidos", "Ativar Robô", "Enviar propostas em lote"].map((s) => (
+                  {["Rodar uma busca", "Ver leads enriquecidos", "Exportar em CSV", "Disparar no WhatsApp"].map((s) => (
                     <div key={s} className="flex items-center gap-2">
                       <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-success/15 text-success border border-success/30">
                         <Check className="w-4 h-4" />
@@ -450,7 +449,7 @@ export default function Landing() {
           />
 
           <div className="mt-8 grid md:grid-cols-3 gap-6">
-            {[{ icon: Sparkles, t: "Busca real", d: "Nicho + cidade + estado e capturamos leads." }, { icon: ShieldCheck, t: "Enriquecimento", d: "Site, Instagram, WhatsApp e indicadores." }, { icon: Zap, t: "Robô no backend", d: "Sessão/QR e envio em lote sem o usuário ficar no navegador." }].map(
+            {[{ icon: Sparkles, t: "Busca real", d: "Nicho + cidade + estado e capturamos leads." }, { icon: ShieldCheck, t: "Enriquecimento", d: "Site, Instagram, WhatsApp e indicadores." }, { icon: Zap, t: "Exportação", d: "CSV completo pronto pro seu CRM." }].map(
               ({ icon: Icon, t, d }) => (
                 <Card key={t} className="p-6 bg-card/70">
                   <div className="p-3 rounded-2xl bg-primary/10 text-primary inline-flex">
