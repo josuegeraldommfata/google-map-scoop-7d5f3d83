@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Search, MapPin, Tag, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, MapPin, Tag, Zap, Crown, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchQuery } from "@/types/lead";
+import { getPlan, getPlanLimits, getTodayUsage, setPlan, type PlanKey } from "@/lib/plan";
+import { toast } from "sonner";
 
 const STATES = [
   "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
@@ -23,18 +25,44 @@ export function SearchForm({ onSearch, isSearching }: Props) {
   const [cities, setCities] = useState("");
   const [state, setState] = useState("");
   const [quantity, setQuantity] = useState("50");
+  const [plan, setPlanState] = useState<PlanKey>(getPlan());
+  const [usedToday, setUsedToday] = useState<number>(getTodayUsage());
+  const limits = getPlanLimits(plan);
+  const isBusiness = plan === "business";
+
+  useEffect(() => {
+    const sync = () => { setPlanState(getPlan()); setUsedToday(getTodayUsage()); };
+    window.addEventListener("storage", sync);
+    window.addEventListener("focus", sync);
+    return () => { window.removeEventListener("storage", sync); window.removeEventListener("focus", sync); };
+  }, []);
+
+  const requested = parseInt(quantity) || 0;
+  const exceedsPerSearch = requested > limits.maxLeadsPerSearch;
+  const exceedsDaily = limits.dailySearches !== null && usedToday >= limits.dailySearches;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!niche || !cities || !state) return;
+    if (exceedsDaily) {
+      toast.error(`Limite diário do plano ${limits.label} atingido (${limits.dailySearches} pesquisas/dia). Faça upgrade para o Business.`);
+      return;
+    }
+    if (exceedsPerSearch) {
+      toast.error(`Seu plano ${limits.label} permite no máximo ${limits.maxLeadsPerSearch} leads por pesquisa. Faça upgrade para o Business.`);
+      return;
+    }
     onSearch({
       niche,
       keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
       cities: cities.split(",").map(c => c.trim()).filter(Boolean),
       state,
-      quantity: Math.max(1, Math.min(500, parseInt(quantity) || 50)),
+      quantity: Math.max(1, Math.min(limits.maxLeadsPerSearch, requested || 50)),
     });
   };
+
+  const switchPlan = (p: PlanKey) => { setPlan(p); setPlanState(p); toast.success(`Plano ${PLAN_LABEL[p]} selecionado (modo demonstração).`); };
+  const PLAN_LABEL: Record<PlanKey, string> = { standard: "Standard", business: "Business" };
 
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 space-y-5 shadow-soft">
