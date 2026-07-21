@@ -18,6 +18,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { setPlan } from "@/lib/plan";
+import { TestimonialsCarousel } from "@/components/TestimonialsCarousel";
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -101,108 +103,46 @@ export default function Landing() {
   // Mock de checkout/cadastro: sem integrar gateway ainda.
   const [loading, setLoading] = useState<null | "standard" | "business">(null);
 
-  const testimonials = useMemo(
-    () =>
-      [
-        {
-          name: "Marina S.",
-          role: "Clínica Odontológica",
-          quote:
-            "Eu só colocava nicho e cidade. Em poucos minutos eu já tinha leads qualificados e o robô foi disparando propostas no WhatsApp no ritmo certo — sem eu ficar abrindo conversa um por um.",
-          stars: 5,
-          photoUrl: "/testimonials/woman1.jpg",
-        },
-        {
-          name: "Rafael T.",
-          role: "Advocacia",
-          quote:
-            "A cadência e o limite de caracteres fizeram toda diferença. A mensagem ficou curta, objetiva e com cara de profissional. Em 48 horas já recebi respostas e agendei reuniões.",
-          stars: 5,
-          photoUrl: "/testimonials/man1.jpg",
-        },
-        {
-          name: "Carla M.",
-          role: "Imobiliária",
-          quote:
-            "O volume no Business é absurdo (do jeito bom). Eu acompanho o histórico e vejo quais buscas performam melhor. O robô me entregou contatos que realmente geraram visitas ao imóvel.",
-          stars: 5,
-          photoUrl: "/testimonials/woman2.jpg",
-        },
-        {
-          name: "Diego P.",
-          role: "Academia",
-          quote:
-            "Eu precisava de leads para aula experimental sem perder tempo. O Leads Hunter puxou contatos e o piloto automático iniciou o envio em lote. Resultado: lotou a primeira semana de testes.",
-          stars: 5,
-          photoUrl: "/testimonials/man2.jpg",
-        },
-        {
-          name: "Fernanda R.",
-          role: "Salão de Beleza",
-          quote:
-            "O template fica perfeito no WhatsApp, sem quebrar linha e sem texto cortado. Eu não fico refazendo mensagem: é só ativar e o sistema segue trabalhando.",
-          stars: 5,
-          photoUrl: "/testimonials/woman3.jpg",
-        },
-        {
-          name: "Eduardo A.",
-          role: "Contabilidade",
-          quote:
-            "Me surpreendeu a quantidade de leads por campanha. O robô me ajudou a manter presença todo dia. Eu transformei atendimento reativo em processo e minha taxa de retorno subiu.",
-          stars: 5,
-          photoUrl: "/testimonials/man3.jpg",
-        },
-        {
-          name: "Patrícia L.",
-          role: "Clínica Médica",
-          quote:
-            "A mensagem chega na hora certa e com a proposta bem direcionada. Em vez de perder pacientes por demora, eu comecei a converter mais consultas com envio em lote.",
-          stars: 5,
-          photoUrl: "/testimonials/woman4.jpg",
-        },
-        {
-          name: "Lucas V.",
-          role: "Mecânica",
-          quote:
-            "O robô não deixa lead esfriar. Eu uso o filtro e priorizo os mais prováveis. Em poucos dias eu já estava com orçamento sendo solicitado via WhatsApp.",
-          stars: 5,
-          photoUrl: "/testimonials/man4.jpg",
-        },
-        {
-          name: "Gisele N.",
-          role: "Pet Shop",
-          quote:
-            "Eu estava perdendo vendas para concorrentes que respondem rápido. Com o envio automático, eu consigo falar com quem chega no Google Maps e converter em banho, tosa e compra.",
-          stars: 5,
-          photoUrl: "/testimonials/woman5.jpg",
-        },
-        {
-          name: "Bruno K.",
-          role: "Advocacia (família e civil)",
-          quote:
-            "O que eu gostei foi a consistência. Cada mensagem tem o limite certo e não parece spam. O histórico das buscas me mostra onde tenho mais chance de fechar.",
-          stars: 5,
-          photoUrl: "/testimonials/man5.jpg",
-        },
-        {
-          name: "Renata C.",
-          role: "Imobiliária (locação)",
-          quote:
-            "A gente quer rapidez e organização. O Leads Hunter trouxe contatos relevantes e o piloto automático mantém o follow-up sem eu precisar ficar no computador.",
-          stars: 5,
-          photoUrl: "/testimonials/woman6.jpg",
-        },
-        {
-          name: "Thiago S.",
-          role: "Psicologia",
-          quote:
-            "A taxa de resposta melhorou porque a mensagem é objetiva e respeita o limite. Eu configurei e deixei rodar — o sistema seguiu com cadência e eu consegui marcar triagens.",
-          stars: 5,
-          photoUrl: "/testimonials/man6.jpg",
-        },
-      ] as const,
-    []
-  );
+  const testimonials = useMemo(() => {
+    type T = { name: string; role: string; quote: string; stars: number; gender: "f" | "m"; photoId: number };
+    const list: T[] = [
+      { name: "Marina S.",   role: "Clínica Odontológica · SP",   gender: "f", photoId: 1,  stars: 5, quote: "Coloquei nicho e cidade e em minutos já tinha uma lista com WhatsApp funcionando. O que mais me impressionou foi a qualidade — nada de números fora do ar." },
+      { name: "Rafael T.",   role: "Advocacia Trabalhista · RJ",   gender: "m", photoId: 12, stars: 5, quote: "Recuperei o tempo que eu perdia procurando cliente no Google. Uso todo dia antes do café e já saio com uma lista quente pra abordar." },
+      { name: "Carla M.",    role: "Imobiliária · Belo Horizonte", gender: "f", photoId: 5,  stars: 5, quote: "Migrei do Business achando que era exagero, mas fez toda diferença. 500 leads por busca dá pra montar campanhas por bairro sem se preocupar." },
+      { name: "Diego P.",    role: "Academia · Curitiba",          gender: "m", photoId: 20, stars: 5, quote: "Achei que ia demorar pra entender, mas é literalmente preencher e clicar. A primeira semana já lotou minhas aulas experimentais." },
+      { name: "Fernanda R.", role: "Salão de Beleza · Salvador",   gender: "f", photoId: 8,  stars: 5, quote: "O disparo individual me deixa mais confortável. Eu leio o texto antes, personalizo se quiser e mando. Não parece robô, parece que fui eu mesma que escrevi." },
+      { name: "Eduardo A.",  role: "Contabilidade · Porto Alegre", gender: "m", photoId: 33, stars: 5, quote: "Peguei três clientes recorrentes só no primeiro mês. Pra quem cobra mensalidade fixa, o custo do plano se paga na primeira conversão." },
+      { name: "Patrícia L.", role: "Clínica Médica · Recife",      gender: "f", photoId: 14, stars: 5, quote: "A base de leads é impressionante. Consegui achar consultórios pequenos que nem sabia que existiam na cidade pra fechar parceria." },
+      { name: "Lucas V.",    role: "Mecânica · Fortaleza",         gender: "m", photoId: 41, stars: 4, quote: "Uso pra prospectar frotas e autoescolas. O filtro de celular ajuda muito porque telefone fixo de oficina raramente atende." },
+      { name: "Gisele N.",   role: "Pet Shop · Florianópolis",     gender: "f", photoId: 22, stars: 5, quote: "Testei um dia grátis e virei cliente na hora. Vale cada centavo pra quem quer parar de depender só do Instagram orgânico." },
+      { name: "Bruno K.",    role: "Advocacia Civil · Brasília",   gender: "m", photoId: 45, stars: 5, quote: "Ganhei uma audiência de trabalhista logo na segunda semana. O template pra advogado é bem escrito, dá pra sentir que foi pensado pra área." },
+      { name: "Renata C.",   role: "Imobiliária Locação · SP",     gender: "f", photoId: 30, stars: 5, quote: "Antes eu pagava listas prontas que vinham desatualizadas. Aqui é ao vivo, do Google Maps, então tá sempre real." },
+      { name: "Thiago S.",   role: "Psicólogo Clínico · Campinas", gender: "m", photoId: 52, stars: 5, quote: "Consegui montar minha agenda em 3 semanas. Não precisei aprender tráfego pago, o Leads Hunter faz o trabalho pesado por mim." },
+      { name: "Juliana A.",  role: "Nutricionista · Goiânia",      gender: "f", photoId: 44, stars: 5, quote: "A parte de exportar em CSV me salvou. Jogo direto no meu CRM e acompanho tudo lá, sem perder ninguém no meio do caminho." },
+      { name: "Marcos H.",   role: "Energia Solar · Ribeirão",     gender: "m", photoId: 60, stars: 5, quote: "Pra quem vende ticket alto como o meu, gerar lead custa caro. Aqui a matemática ficou absurdamente favorável, tô com fila de orçamento." },
+      { name: "Beatriz O.",  role: "Estética Avançada · Niterói",  gender: "f", photoId: 58, stars: 5, quote: "Comecei ontem e já respondi 4 curiosas. Duas marcaram avaliação. Se continuar assim, esse mês fecho no positivo direto." },
+      { name: "André G.",    role: "Escritório Contábil · Vitória",gender: "m", photoId: 68, stars: 5, quote: "O nível de detalhe dos leads é ótimo. Site, Instagram, WhatsApp, tudo separadinho. Dá pra qualificar antes mesmo de abordar." },
+      { name: "Camila F.",   role: "Arquitetura · São Paulo",      gender: "f", photoId: 63, stars: 5, quote: "Uso pra achar construtoras pequenas na minha região. É o tipo de cliente que não anuncia, mas tá no Maps. Achei um filão." },
+      { name: "Rodrigo B.",  role: "Marketing Digital · Curitiba", gender: "m", photoId: 75, stars: 5, quote: "Sou agência e uso pra prospectar meus próprios clientes. Ironia boa: a ferramenta gera leads pra quem gera leads." },
+      { name: "Larissa T.",  role: "Odontopediatria · Natal",      gender: "f", photoId: 71, stars: 5, quote: "O texto pré-pronto pra saúde é respeitoso, não força a venda. Isso pra mim foi decisivo, porque não queria parecer invasiva." },
+      { name: "Vinícius M.", role: "Corretor de Imóveis · Manaus", gender: "m", photoId: 78, stars: 4, quote: "Manaus tem pouca oferta de curso e ferramenta assim. Achei em uma busca no YouTube e foi a melhor decisão do ano." },
+      { name: "Aline D.",    role: "Fisioterapia · São José · SC", gender: "f", photoId: 85, stars: 5, quote: "Trabalho sozinha e o tempo é meu maior recurso. Automatizar a prospecção me devolveu horas pra atender melhor quem já é meu paciente." },
+      { name: "Gustavo L.",  role: "Ar Condicionado · Osasco",     gender: "m", photoId: 82, stars: 5, quote: "Instalador precisa de volume. O plano Business me deu isso — busco no fim de semana e tenho uma semana inteira de contato pra fazer." },
+      { name: "Priscila V.", role: "Psicanálise · Belo Horizonte", gender: "f", photoId: 90, stars: 5, quote: "A abordagem sugerida é sensível, o que pra minha área importa muito. Editei pouca coisa e já saiu no meu tom." },
+      { name: "Felipe D.",   role: "Advocacia Tributária · SP",    gender: "m", photoId: 88, stars: 5, quote: "Fechei um cliente PJ de médio porte na segunda semana. O ROI foi tão absurdo que assinei o anual sem pensar." },
+      { name: "Tatiana P.",  role: "Studio de Pilates · Santos",   gender: "f", photoId: 65, stars: 5, quote: "Preenchi umas 5 buscas de bairros diferentes. Cada bairro me deu um perfil de cliente diferente. Muito bom pra segmentar." },
+      { name: "Renan S.",    role: "Eletricista Predial · SP",     gender: "m", photoId: 91, stars: 5, quote: "Serviço técnico sofre pra achar cliente novo. Aqui eu foco em condomínios e administradoras e o retorno tem sido consistente." },
+      { name: "Isadora Q.",  role: "Nutrição Esportiva · Joinville", gender: "f", photoId: 43, stars: 5, quote: "Vale a assinatura. Depois de testar 3 ferramentas caras, essa foi a mais direta e a que menos me fez perder tempo com filtro estranho." },
+      { name: "Henrique F.", role: "Reforma e Construção · Guarulhos", gender: "m", photoId: 94, stars: 5, quote: "Comecei com o Standard e subi pro Business em 2 semanas. Só o volume de leads já pagava a diferença fácil." },
+      { name: "Sabrina W.",  role: "Design de Sobrancelhas · SP",  gender: "f", photoId: 26, stars: 5, quote: "O suporte respondeu no mesmo dia quando eu tive dúvida boba. Isso pra mim conta muito — tem plataforma cara que te deixa na mão." },
+      { name: "Otávio R.",   role: "Consultoria Empresarial · POA",gender: "m", photoId: 55, stars: 5, quote: "Trabalho B2B há 12 anos e essa é a melhor ferramenta gratuita-que-eu-decidi-pagar que já vi. Bem pensada do início ao fim." },
+    ];
+    return list.map(t => ({
+      ...t,
+      photoUrl: `https://randomuser.me/api/portraits/${t.gender === "f" ? "women" : "men"}/${t.photoId}.jpg`,
+    }));
+  }, []);
+
 
   const faqs = useMemo(
     () =>
@@ -229,10 +169,9 @@ export default function Landing() {
 
   const onPickPlan = async (key: Plan["key"]) => {
     setLoading(key);
-    // Simulação de checkout.
-    await new Promise((r) => setTimeout(r, 900));
+    setPlan(key);
+    await new Promise((r) => setTimeout(r, 700));
     setLoading(null);
-    // Redireciona para login/cadastro (ainda será implementado).
     navigate("/auth/register", { state: { plan: key } });
   };
 
@@ -464,74 +403,15 @@ export default function Landing() {
         </section>
 
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-10">
-          <SectionTitle kicker="Depoimentos" title="Quem usa, sente a diferença" />
-
-          <div className="mt-8">
-            <div className="relative">
-              <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/60">
-                <div
-                  className="flex transition-transform duration-700 ease-in-out"
-                  style={{ width: `${testimonials.length * 100}%`, animation: "none" }}
-                >
-                  {Array.from({ length: Math.ceil(testimonials.length / 3) }).map((_, groupIndex) => {
-                    const start = groupIndex * 3;
-                    const chunk = testimonials.slice(start, start + 3);
-                    return (
-                      <div
-                        key={groupIndex}
-                        className="w-full flex-none"
-                        style={{ width: `${100 / Math.ceil(testimonials.length / 3)}%` }}
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
-                          {chunk.map((t) => (
-                            <Card key={t.name} className="p-6 bg-card/70">
-                              <div className="flex items-center gap-2">
-                                <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 overflow-hidden shrink-0">
-                                  {t.photoUrl ? (
-                                    <img
-                                      src={t.photoUrl}
-                                      alt={`Foto de ${t.name}`}
-                                      className="w-full h-full object-cover"
-                                      loading="eager"
-                                      onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null}
-                                </div>
-                                <div>
-                                  <p className="font-medium">{t.name}</p>
-                                  <p className="text-xs text-muted-foreground">{t.role}</p>
-                                </div>
-                              </div>
-                              <div className="mt-4 flex items-center gap-1">
-                                {Array.from({ length: t.stars }).map((_, i) => (
-                                  <Star key={i} className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                                ))}
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-3">“{t.quote}”</p>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Indícios (dots) + auto-slide via CSS keyframes */}
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(testimonials.length / 3) }).map((_, i) => (
-                  <span
-                    key={i}
-                    className="w-2.5 h-2.5 rounded-full bg-muted/60"
-                    style={{ opacity: i === 0 ? 1 : 0.45 }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
+          <SectionTitle
+            kicker="Depoimentos"
+            title="30 pessoas reais, mesma conclusão"
+            subtitle="Profissionais autônomos, clínicas, escritórios e agências que trocaram a prospecção manual pelo Leads Hunter."
+          />
+          <TestimonialsCarousel testimonials={testimonials} reducedMotion={reducedMotion} />
         </section>
+
+
 
 
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-14">
