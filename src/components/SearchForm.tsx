@@ -142,17 +142,7 @@ export function SearchForm({ onSearch, isSearching }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label className="text-secondary-foreground text-sm">Quantidade de Leads</Label>
-          <Input
-            type="number"
-            value={quantity}
-            onChange={e => setQuantity(e.target.value)}
-            placeholder="Ex: 50"
-            min={1}
-            max={500}
-            className="bg-muted border-border"
-          />
-        <div className="space-y-2">
+
           <Label className="text-secondary-foreground text-sm">Quantidade de Leads</Label>
           <Input
             type="number"
