@@ -66,15 +66,27 @@ export function SearchForm({ onSearch, isSearching }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 space-y-5 shadow-soft">
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
         <div className="p-2 rounded-lg bg-primary/10">
           <Search className="w-5 h-5 text-primary" />
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Configuração</p>
           <h2 className="font-display text-2xl text-foreground leading-none">Nova busca</h2>
         </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border ${isBusiness ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border"}`}>
+            <Crown className="w-3.5 h-3.5" /> Plano {limits.label}
+          </span>
+          {limits.dailySearches !== null && (
+            <span className="text-muted-foreground">{usedToday}/{limits.dailySearches} buscas hoje</span>
+          )}
+          <button type="button" onClick={() => switchPlan(isBusiness ? "standard" : "business")} className="underline text-muted-foreground hover:text-foreground">
+            trocar
+          </button>
+        </div>
       </div>
+
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -140,13 +152,39 @@ export function SearchForm({ onSearch, isSearching }: Props) {
             max={500}
             className="bg-muted border-border"
           />
-          <p className="text-[11px] text-muted-foreground">Mínimo 1, máximo 500</p>
+        <div className="space-y-2">
+          <Label className="text-secondary-foreground text-sm">Quantidade de Leads</Label>
+          <Input
+            type="number"
+            value={quantity}
+            onChange={e => setQuantity(e.target.value)}
+            placeholder="Ex: 50"
+            min={1}
+            max={limits.maxLeadsPerSearch}
+            className={`bg-muted border-border ${exceedsPerSearch ? "border-destructive" : ""}`}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Plano {limits.label}: até <strong>{limits.maxLeadsPerSearch}</strong> leads por pesquisa
+            {limits.dailySearches !== null ? ` · ${limits.dailySearches} pesquisas/dia` : " · pesquisas ilimitadas"}
+          </p>
+          {exceedsPerSearch && (
+            <p className="text-[11px] text-destructive flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Faça upgrade para o Business para buscar até 500 leads.
+            </p>
+          )}
         </div>
       </div>
 
+      {exceedsDaily && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive flex items-center gap-2">
+          <Lock className="w-4 h-4" />
+          Limite diário atingido ({limits.dailySearches} pesquisas/dia no Standard). Faça upgrade para o Business.
+        </div>
+      )}
+
       <Button
         type="submit"
-        disabled={isSearching || !niche || !cities || !state}
+        disabled={isSearching || !niche || !cities || !state || exceedsPerSearch || exceedsDaily}
         className="w-full h-12 text-base font-semibold glow-primary"
       >
         {isSearching ? (
@@ -164,3 +202,4 @@ export function SearchForm({ onSearch, isSearching }: Props) {
     </form>
   );
 }
+
