@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { setPlan } from "@/lib/plan";
+import { TestimonialsCarousel } from "@/components/TestimonialsCarousel";
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
