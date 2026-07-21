@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { saveSearch, loadAll, clearAll } from "@/lib/leadsRepo";
 import { log } from "@/lib/consoleLog";
+import { canSearch, incrementUsage } from "@/lib/plan";
 
 type View = 'search' | 'metrics' | 'history' | 'crm';
 
@@ -33,16 +34,24 @@ export default function Index() {
   const hotLeads = leads.filter(l => l.type === 'hot').length;
 
   const handleSearch = useCallback(async (query: SearchQuery) => {
+    const guard = canSearch(query.quantity);
+    if (!guard.allowed) {
+      log.error(guard.reason || "Busca bloqueada pelo plano.");
+      toast.error(guard.reason || "Busca bloqueada pelo plano.");
+      return;
+    }
+    const effectiveQuery: SearchQuery = { ...query, quantity: guard.cappedQuantity };
     setIsSearching(true);
-    log.info(`Iniciando varredura · nicho="${query.niche}" · ${query.cities.join(", ")}/${query.state} · meta=${query.quantity}`);
-    if (query.keywords.length) log.info(`Palavras-chave: ${query.keywords.join(", ")}`);
+    log.info(`Iniciando varredura · nicho="${effectiveQuery.niche}" · ${effectiveQuery.cities.join(", ")}/${effectiveQuery.state} · meta=${effectiveQuery.quantity} · plano=${guard.limits.label}`);
+    if (effectiveQuery.keywords.length) log.info(`Palavras-chave: ${effectiveQuery.keywords.join(", ")}`);
     const startedAt = performance.now();
     try {
       log.info("Conectando ao motor de busca (Google Maps + enriquecimento)...");
-      const { data, error } = await supabase.functions.invoke('scrape-leads', { body: query });
+      const { data, error } = await supabase.functions.invoke('scrape-leads', { body: effectiveQuery });
       if (error) throw error;
       const newLeads: Lead[] = (data?.leads || []) as Lead[];
       const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+      incrementUsage();
 
       if (newLeads.length === 0) {
         log.warn(`Nenhum lead retornado em ${elapsed}s. Tente outro nicho ou cidade.`);
